@@ -1,0 +1,11 @@
+{
+  "name": "@tq/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts",
+    "./constants": "./src/constants.ts",
+    "./mesh/*": "./src/mesh/*.ts"
+  }
+}

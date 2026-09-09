@@ -1,0 +1,9 @@
+{
+  "name": "@tq/root",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared"],
+  "scripts": {
+    "test:mesh": "node --experimental-strip-types --test shared/test/*.test.ts"
+  }
+}
