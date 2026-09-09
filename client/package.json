@@ -1,0 +1,28 @@
+{
+  "name": "@tq/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@meshtastic/transport-web-bluetooth": "^0.1.5",
+    "@tq/shared": "*",
+    "leaflet": "^1.9.4",
+    "leaflet-rotate": "^0.2.8",
+    "mgrs": "^2.1.0",
+    "milsymbol": "^3.0.2",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.16",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

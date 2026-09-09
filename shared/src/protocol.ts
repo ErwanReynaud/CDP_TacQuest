@@ -62,50 +62,18 @@ export interface GraphicStyle {
   mission?: string;
 }
 
-/**
- * Géométrie d'un ordre `graphic`. Auparavant typée `unknown` : le codec mesh a
- * besoin d'un ensemble fermé pour produire du binaire, et l'UI n'a jamais émis
- * autre chose qu'une LineString (les polygones sont des LineString fermées
- * marquées par `GraphicStyle.polygon`).
- */
-export interface LineStringFeature {
-  type: 'Feature';
-  properties: Record<string, unknown>;
-  geometry: {
-    type: 'LineString';
-    /** Sommets en ordre GeoJSON : [lng, lat]. */
-    coordinates: [number, number][];
-  };
-}
-
 export type OrderPayload =
   // Message libre du chat « Comms » (chacun peut en envoyer).
   | { kind: 'text'; body: string }
   // `sidc` → symbole milsymbol (plot ENI) ; `color` → rond de couleur + nom
   // (point nommé). Les deux s'excluent : `color` prime au rendu.
   | { kind: 'waypoint'; name: string; lat: number; lng: number; sidc?: string; color?: string }
-  | { kind: 'graphic'; geojson: LineStringFeature; style?: GraphicStyle }
+  | { kind: 'graphic'; geojson: unknown; style?: GraphicStyle }
   | { kind: 'remove'; orderId: string }
-  | { kind: 'ack'; orderId: string }
-  /**
-   * Effacement en masse : masque tout ordre dont `ts <= beforeTs`. Introduit
-   * pour le mode mesh, où « effacer la carte » émettait un ordre `remove` par
-   * figuré — 40 paquets LoRa là où un seul suffit.
-   *
-   * Consommateurs à mettre à jour : map/orderFilter.ts (filtrage) et le rendu
-   * des Comms (un `clear` ne s'affiche pas comme un message).
-   */
-  | { kind: 'clear'; beforeTs: number };
+  | { kind: 'ack'; orderId: string };
 
 export interface OrderMessage {
-  /**
-   * Identifiant généré côté client, ré-émission idempotente.
-   *
-   * Format `node:seq` (8 hex, deux-points, 4 hex) depuis le passage au mesh :
-   * un uuid coûtait 16 o binaires, et `remove`/`ack` en référencent un second.
-   * Le serveur ne l'interprète pas, le changement est donc purement client.
-   * Voir shared/src/mesh/ids.ts.
-   */
+  /** uuid généré côté client (ré-émission idempotente). */
   id: string;
   authorId: string;
   ts: number;

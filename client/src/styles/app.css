@@ -1,0 +1,1138 @@
+:root {
+  --bg: #0f1411;
+  --panel: #18201b;
+  --panel-2: #283228;
+  --line: #354139;
+  --text: #e6eadf;
+  --muted: #93a08f;
+  --accent: #8aa86a;
+  --accent-ink: #0f1411;
+  --danger: #ff3b30;
+  --warn: #d2a24a;
+  --radius: 7px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  overscroll-behavior: none;
+}
+
+/* Leaflet impose sa propre police : hériter de la nôtre partout (contrôles,
+   popups, tooltips, attribution). */
+.leaflet-container,
+.leaflet-popup-content,
+.leaflet-tooltip {
+  font-family: inherit;
+}
+
+/* ----- mode solo (aucune salle rejointe) -----
+   Tous les outils (plots, tracés compris — stockés localement) restent
+   utilisables ; seul ce qui suppose des coéquipiers est masqué. */
+body.solo #member-status,
+body.solo #btn-comms,
+body.solo .drawer-head,
+body.solo #drawer h2:first-of-type,
+body.solo #member-list { display: none; }
+/* Le bouton « Salle » n'existe qu'en solo ; en salle, le code vit dans le tiroir. */
+body:not(.solo) #btn-room { display: none; }
+
+input[type='text'] {
+  background: var(--panel);
+  border: 1px solid var(--panel-2);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1.1rem;
+  padding: 12px 14px;
+  width: 100%;
+}
+input[type='text']:focus { outline: 2px solid var(--accent); border-color: transparent; }
+#room-code { text-transform: uppercase; letter-spacing: 0.3em; font-family: ui-monospace, monospace; }
+
+.btn {
+  background: var(--panel-2);
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.05rem;
+  min-height: 48px; /* cible tactile avec des gants */
+  padding: 12px 18px;
+}
+.btn:active { filter: brightness(1.2); }
+.btn-primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+/* Action destructrice (effacer toute la carte…). */
+.btn-danger { background: var(--danger); color: #fff; font-weight: 600; min-height: 40px; padding: 6px 14px; }
+.btn[disabled] { opacity: 0.5; }
+
+.separator {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 0.85rem;
+}
+.separator::before, .separator::after { content: ''; flex: 1; border-top: 1px solid var(--panel-2); }
+
+.join-row { display: flex; gap: 10px; }
+.join-row input { flex: 1; min-width: 0; }
+
+/* Historique des salles récentes : chips « code + indicatif » rejoignables d'un tap. */
+.room-history { display: flex; flex-direction: column; gap: 8px; }
+.room-history[hidden] { display: none; }
+.room-history-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.room-history-list { display: flex; flex-direction: column; gap: 8px; }
+.room-chip {
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--panel-2);
+  border-radius: 8px;
+  display: flex;
+  overflow: hidden;
+}
+.room-chip-main {
+  align-items: baseline;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  min-height: 48px; /* cible tactile */
+  min-width: 0;
+  padding: 10px 14px;
+  text-align: left;
+}
+.room-chip-main:active { filter: brightness(1.25); }
+.room-chip-code {
+  font-family: ui-monospace, monospace;
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
+}
+.room-chip-call {
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-chip-remove {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 14px;
+}
+.room-chip-remove:active { filter: brightness(1.25); }
+
+.error { color: var(--danger); margin: 0; }
+
+/* Proposition de reprise d'un indicatif déconnecté : action destructrice → rouge. */
+.btn-replace { background: var(--danger); color: #fff; font-weight: 600; }
+.btn-replace[hidden] { display: none; }
+
+/* ----- écran carte ----- */
+#map-screen { position: fixed; inset: 0; }
+#map { position: absolute; inset: 0; background: #0c100b; }
+
+/* Pastille flottante : état connexion + effectif, ouvre le tiroir */
+#status-cluster {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  position: absolute;
+  right: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  z-index: 1100;
+}
+.status-pill {
+  align-items: center;
+  background: rgba(24, 32, 27, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.95rem;
+  font-weight: 600;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 14px;
+}
+.status-menu { padding: 6px 12px; }
+.status-menu svg { display: block; height: 20px; width: 20px; }
+#pending-badge {
+  background: var(--warn);
+  border-radius: 9px;
+  color: var(--accent-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-width: 18px;
+  padding: 1px 5px;
+  text-align: center;
+}
+#pending-badge[hidden] { display: none; }
+
+/* Réticule fixe au centre de l'écran */
+#crosshair {
+  height: 30px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  z-index: 1050;
+}
+#crosshair::before,
+#crosshair::after {
+  background: #0033ff; /* bleu pétard : ressort sur topo comme sur satellite */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  content: '';
+  position: absolute;
+}
+#crosshair::before { /* trait horizontal, trou au centre */
+  height: 2px;
+  left: 0;
+  right: 0;
+  top: 14px;
+  clip-path: polygon(0 0, 36% 0, 36% 100%, 0 100%, 0 0, 100% 0, 100% 100%, 64% 100%, 64% 0, 100% 0);
+}
+#crosshair::after { /* trait vertical, trou au centre */
+  bottom: 0;
+  left: 14px;
+  top: 0;
+  width: 2px;
+  clip-path: polygon(0 0, 100% 0, 100% 36%, 0 36%, 0 0, 0 100%, 100% 100%, 100% 64%, 0 64%, 0 100%);
+}
+
+/* Rapporteur (cercle trigo) : overlay écran-fixe centré sur le réticule. Tourne
+   avec le nord (transform rotate posé par le JS = bearing de la carte). */
+#protractor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(88vw, 66vh);
+  height: min(88vw, 66vh);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1040; /* sous le réticule (1050) : le trou central reste visible */
+}
+#protractor svg { width: 100%; height: 100%; overflow: visible; }
+/* Épaisseurs en pixels écran réels (non liées à l'échelle du viewBox). */
+#protractor line, .pr-ring { vector-effect: non-scaling-stroke; }
+.pr-ring { fill: none; stroke: rgba(0, 51, 255, 0.6); stroke-width: 3; }
+.pr-minor { stroke: rgba(255, 255, 255, 0.9); stroke-width: 3; }
+.pr-major { stroke: #fff; stroke-width: 5; }
+.pr-north { stroke: #ff3b30; stroke-width: 6; }
+.pr-deg-label,
+.pr-mil-label {
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: monospace;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+}
+.pr-deg-label { fill: #fff; font-size: 12px; }
+.pr-mil-label { fill: #ffd166; font-size: 10px; }
+.pr-n { fill: #ff3b30; }
+#protractor-readout {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  pointer-events: none;
+  background: rgba(12, 16, 11, 0.82);
+  color: #fff;
+  font: 700 0.85rem/1 monospace;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Coordonnées du centre, en bas à gauche */
+#coord-cluster {
+  align-items: stretch;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 6px;
+  left: 10px;
+  position: absolute;
+  z-index: 1100;
+}
+#coord-readout {
+  background: rgba(26, 42, 26, 0.88);
+  border: 1px solid var(--panel-2);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  padding: 7px 10px;
+  text-align: left;
+}
+/* Altitude du point visé : dernier groupe de coordonnée, même police que le
+   reste (hérite de .coords / #coord-readout). Vide (inconnue / hors-ligne) →
+   masquée, pas de groupe ni d'espace fantôme. */
+.coord-alt:empty { display: none; }
+.coord-btn {
+  align-items: center;
+  background: rgba(26, 42, 26, 0.88);
+  border: 1px solid var(--panel-2);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  padding: 0 9px;
+}
+.coord-btn svg { height: 19px; width: 19px; }
+
+.option-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+/* Le display:flex ci-dessus outrepasserait l'attribut hidden (règle UA). */
+.option-row[hidden] { display: none; }
+.option-row > span { color: var(--muted); }
+.segmented { display: flex; gap: 0; }
+.segmented button {
+  background: var(--panel-2);
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+.segmented button:first-child { border-radius: 8px 0 0 8px; }
+.segmented button:last-child { border-radius: 0 8px 8px 0; }
+.segmented button.selected { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+.order-popup .coords { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+
+.drawer-head {
+  align-items: center;
+  border-bottom: 1px solid var(--panel-2);
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+.drawer-label { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; }
+
+.topbar-btn {
+  background: var(--panel-2);
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.95rem;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.topbar-danger { color: var(--danger); }
+.topbar-spacer { flex: 1; }
+#room-code-btn { font-family: ui-monospace, monospace; letter-spacing: 0.15em; font-weight: 700; }
+
+#conn-dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+}
+.conn-connected { background: #5dbb63; }
+.conn-reconnecting { background: var(--warn); animation: pulse 1.2s infinite; }
+.conn-offline { background: var(--danger); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+.fab {
+  align-items: center;
+  background: rgba(24, 32, 27, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  height: 54px;
+  justify-content: center;
+  width: 54px;
+}
+.fab svg { height: 26px; width: 26px; }
+.fab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+#drawer {
+  background: var(--panel);
+  bottom: 0;
+  left: 0;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 12px 16px;
+  position: absolute;
+  right: 0;
+  z-index: 1200;
+  border-top: 2px solid var(--panel-2);
+}
+#drawer h2 { margin: 0 0 8px; font-size: 1rem; color: var(--muted); }
+#member-list { list-style: none; margin: 0; padding: 0; }
+#member-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--panel-2);
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+}
+#member-list .m-callsign { flex: 1; font-weight: 600; }
+#member-list .m-meta { color: var(--muted); font-size: 0.8rem; }
+#member-list li.offline .m-callsign { color: var(--muted); }
+#member-list .m-center { min-height: 36px; padding: 4px 10px; }
+
+/* ----- marqueurs ----- */
+.tq-sym { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+
+/* Points GPS : soi-même en bleu (comme les GPS grand public), les coéquipiers
+   en vert accent avec leur indicatif en tooltip. */
+.gps-dot-self,
+.gps-dot {
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  box-sizing: border-box;
+}
+.gps-dot-self { background: #0033ff; }
+.gps-dot { background: var(--accent); border-width: 2px; }
+.gps-dot.is-disconnected { background: #7a7a7a; opacity: 0.45; }
+
+/* Nom d'une ligne, flottant à son extrémité ; figuré d'échelon en son centre.
+   Marqueurs divIcon ancrés en (0,0) : le contenu déborde et se cale par transform. */
+.tq-line-label { white-space: nowrap; }
+.tq-line-label span {
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 5px;
+  display: inline-block;
+  font: 600 13.5px/1.2 ui-monospace, monospace;
+  padding: 2px 6px;
+  transform: translate(8px, -50%);
+}
+
+/* Nom d'une box, centré sur le polygone. */
+.tq-box-label { white-space: nowrap; }
+.tq-box-label span {
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 5px;
+  display: inline-block;
+  font: 600 13.5px/1.2 ui-monospace, monospace;
+  padding: 2px 6px;
+  transform: translate(-50%, -50%);
+}
+
+/* Point nommé : rond de couleur (cliquable) + libellé flottant à droite. */
+.tq-point .pt-dot {
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-sizing: border-box;
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+.tq-point .pt-name {
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 5px;
+  color: #fff;
+  font: 600 13.5px/1.2 ui-monospace, monospace;
+  left: 20px;
+  padding: 1px 5px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* Texte d'un plot ENI : pastille sombre flottant à droite du losange. */
+.tq-plot-label {
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 5px;
+  color: #ff3b30;
+  font: 600 13.5px/1.2 ui-monospace, monospace;
+  left: calc(100% + 4px);
+  padding: 1px 5px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.tq-echelon span.ech {
+  align-items: center;
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 6px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 6px;
+  transform: translate(-50%, -50%);
+}
+.tq-echelon .ech-dot { background: currentColor; border-radius: 50%; height: 5px; width: 5px; }
+.tq-echelon .ech-bar { background: currentColor; height: 14px; width: 3px; }
+.tq-tooltip {
+  background: rgba(16, 22, 15, 0.85);
+  border: 1px solid var(--panel-2);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+.tq-tooltip::before { display: none; }
+
+/* ----- outils de tracé / mesure (bas droite) ----- */
+#fab-stack {
+  align-items: flex-end;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: absolute;
+  right: 16px;
+  z-index: 1100;
+}
+/* Groupe des boutons d'outils ; en portrait, toujours visible (la bascule est
+   masquée). En paysage, il se replie derrière #fab-toggle. */
+#fab-tools {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#fab-toggle { display: none; }
+#fab-toggle .ft-close { display: none; }
+#fab-toggle svg { height: 24px; width: 24px; }
+
+/* Paysage / faible hauteur : on ne tient pas la colonne d'outils → menu déroulant.
+   Seule la bascule reste visible ; à l'ouverture, les outils s'étalent en ligne
+   vers la gauche (la largeur, elle, ne manque pas) et débordent sur une 2ᵉ rangée
+   au-dessus si besoin. */
+@media (max-height: 600px) {
+  #fab-stack {
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    flex-direction: row;
+    gap: 10px;
+  }
+  #fab-toggle { display: flex; }
+  #fab-tools { display: none; }
+  #fab-stack.open #fab-tools {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap-reverse;
+    gap: 10px;
+    justify-content: flex-end;
+    max-width: calc(100vw - 96px);
+  }
+  #fab-stack.open #fab-toggle .ft-open { display: none; }
+  #fab-stack.open #fab-toggle .ft-close { display: block; }
+  /* La barre contextuelle d'esquisse se loge en bas à gauche, au-dessus du
+     cluster de coordonnées. Décalée de l'axe vertical de visée, elle ne masque
+     jamais le réticule central qu'on pointe pour mesurer (le centrer la cachait
+     sur les écrans bas tenus en paysage). */
+  #sketchbar {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    left: 10px;
+    right: auto;
+    top: auto;
+    transform: none;
+  }
+}
+
+/* Menu contextuel d'un outil (ligne tracée, point nommé…) : overlay modal. */
+.tool-modal {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 16px;
+  position: absolute;
+  z-index: 1400;
+}
+.tool-modal[hidden] { display: none; }
+.tool-modal-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 340px;
+  padding: 16px;
+  width: 100%;
+}
+.tool-modal-card h3 { margin: 0; }
+.tool-modal-field { display: flex; flex-direction: column; gap: 6px; }
+.tool-modal-field span { color: var(--muted); font-size: 0.78rem; }
+.composer-label { color: var(--muted); font-size: 0.78rem; margin: 0; }
+.tool-modal-actions { display: flex; gap: 8px; }
+.tool-modal-actions .btn { flex: 1; min-height: 40px; }
+
+/* Figuré d'échelon (limite inter-unités) dans le menu de la ligne. */
+.line-echelons { display: grid; gap: 6px; grid-template-columns: repeat(4, 1fr); }
+.line-ech {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-height: 56px;
+  padding: 8px 4px;
+}
+.line-ech.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+.line-ech small { color: var(--muted); font-size: 0.62rem; }
+.ech-glyph { align-items: center; display: inline-flex; gap: 4px; min-height: 14px; }
+.line-ech .ech-dot { background: currentColor; border-radius: 50%; height: 5px; width: 5px; }
+.line-ech .ech-bar { background: currentColor; height: 14px; width: 3px; }
+
+/* Palette de couleurs du point nommé (réutilise les pastilles .color-dot). */
+.point-colors { display: flex; gap: 12px; }
+.point-colors .color-dot { height: 28px; width: 28px; }
+
+/* Une ligne = un outil ; sa barre contextuelle flotte à gauche du bouton
+   (positionnement absolu : pas de décalage de la pile à l'ouverture). */
+.tool-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  position: relative;
+}
+.tool-fab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+#tool-eni { color: var(--danger); }
+#tool-eni.active { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* Menu contextuel vertical : émerge à gauche du bouton actif (déplacé par JS). */
+#sketchbar {
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  position: absolute;
+  right: 62px; /* largeur du bouton (54) + écart (8) */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 132px;
+  z-index: 1;
+}
+#sketchbar[hidden] { display: none; }
+/* Mesure : la barre devient un bandeau bas-centre, dans l'espace libre entre le
+   cluster de coordonnées (bas gauche) et les outils (bas droite). Ancrée au
+   viewport (enfant de #map-screen), elle ne masque jamais le réticule central
+   qu'on pointe pour mesurer. Plus spécifique que la règle paysage de #sketchbar,
+   donc s'applique dans les deux orientations. */
+#sketchbar.measure-hud {
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  right: auto;
+  top: auto;
+  transform: translateX(-50%);
+  z-index: 1100;
+}
+#sketch-info {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  padding: 2px 0;
+  text-align: center;
+}
+#sketchbar .btn { min-height: 40px; padding: 6px 12px; width: 100%; }
+.sketch-row { display: flex; gap: 6px; }
+.sketch-row .btn { flex: 1; }
+.btn-icon { align-items: center; display: inline-flex; justify-content: center; padding: 6px; }
+.btn-icon svg { height: 22px; width: 22px; }
+
+#sketch-colors { display: flex; gap: 8px; justify-content: center; padding: 2px 0; }
+#sketch-colors[hidden] { display: none; }
+.color-dot {
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  height: 28px;
+  width: 28px;
+}
+.color-dot.selected { border-color: var(--text); }
+
+.tq-popup .leaflet-popup-content-wrapper {
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+}
+.tq-popup .leaflet-popup-tip { background: var(--panel); }
+.order-popup { display: flex; flex-direction: column; gap: 8px; }
+.order-author { color: var(--muted); font-size: 0.8rem; }
+/* Distance jusqu'à moi, sous la coordonnée du plot. */
+.order-dist { display: block; font-size: 0.82rem; font-weight: 600; margin-top: 2px; }
+/* Actions du popup : Modifier + Supprimer côte à côte. */
+.order-actions { display: flex; gap: 8px; }
+.order-actions .btn { flex: 1; }
+.order-delete { background: var(--danger); color: #fff; }
+
+/* ----- haut gauche : Comms (en salle) + recherche de lieu, Tac dessous ----- */
+#topleft-cluster {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 10px;
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  z-index: 1100;
+}
+.topleft-row { display: flex; gap: 8px; }
+
+/* ----- Comms : bouton, panneau latéral, chat ----- */
+.comms-toggle {
+  align-items: center;
+  background: rgba(24, 32, 27, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.9rem;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+}
+.comms-toggle svg { height: 20px; width: 20px; }
+
+/* Résultats de la recherche de lieu (modale). */
+.place-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0;
+}
+.place-results[hidden] { display: none; }
+.place-result {
+  background: var(--panel-2);
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 48px; /* cible tactile */
+  padding: 8px 12px;
+  text-align: left;
+  width: 100%;
+}
+.place-result:active { filter: brightness(1.25); }
+.place-result small { color: var(--muted); }
+#comms-badge {
+  background: var(--danger);
+  border-radius: 9px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-width: 18px;
+  padding: 1px 5px;
+  text-align: center;
+}
+#comms-badge[hidden] { display: none; }
+
+#comms-panel {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  bottom: 0;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: min(360px, 88vw);
+  z-index: 1500;
+}
+#comms-panel[hidden] { display: none; }
+.panel-head { align-items: center; display: flex; justify-content: space-between; }
+.panel-head h2 { font-size: 1.1rem; margin: 0; }
+
+/* Fil de discussion : occupe l'espace restant, défile, dernier message en bas. */
+#comms-messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+.comms-empty { color: var(--muted); margin: auto 0; text-align: center; }
+.comms-msg {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 85%;
+  padding: 6px 9px;
+}
+/* Mes messages : alignés à droite, teinte accent. */
+.comms-msg.mine {
+  align-self: flex-end;
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.cm-head { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
+.cm-head b { font-size: 0.82rem; }
+.cm-time { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.cm-body { line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Accusés de lecture (« lu / j'aime ») */
+.cm-react { align-items: center; display: flex; gap: 6px; margin-top: 4px; }
+.comms-msg.mine .cm-react { justify-content: flex-end; }
+.cm-like,
+.cm-count {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 3px;
+  padding: 2px 8px;
+}
+.cm-like { padding: 3px; }
+.cm-like svg,
+.cm-count svg { height: 14px; width: 14px; }
+.cm-like.liked { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cm-count { font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cm-likers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 5px 0 0;
+  padding: 0;
+}
+.comms-msg.mine .cm-likers { justify-content: flex-end; }
+.cm-likers li {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 1px 7px;
+}
+
+/* Composer : champ de saisie + bouton envoyer. */
+.comms-composer { align-items: stretch; display: flex; gap: 8px; }
+.comms-composer input {
+  flex: 1;
+  font-size: 1rem;
+  min-width: 0;
+}
+.comms-composer .btn {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  min-height: 48px;
+  padding: 8px 14px;
+}
+.comms-composer .btn svg { height: 22px; width: 22px; }
+
+/* ----- Tac : panneau latéral gauche (missions) ----- */
+#tac-panel {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  bottom: 0;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  left: 0;
+  overflow-y: auto;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  position: absolute;
+  top: 0;
+  width: min(340px, 88vw);
+  z-index: 1500;
+}
+#tac-panel[hidden] { display: none; }
+#tac-level button { flex: 1; }
+
+/* Grille des figurés de mission, groupés par catégorie. */
+.mission-cat {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  margin: 8px 0 6px;
+  text-transform: uppercase;
+}
+.mission-grid { display: grid; gap: 6px; grid-template-columns: repeat(2, 1fr); }
+.mission-card {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+}
+.mission-card:active { filter: brightness(1.2); }
+.mission-card b { font-size: 0.8rem; }
+.mission-card small { color: var(--muted); font-size: 0.62rem; line-height: 1.15; text-align: center; }
+/* Aperçus SVG : traits « ami » bleus ; .solid = surfaces pleines (pointes). */
+.mission-card svg { color: #0033ff; height: 36px; width: 64px; }
+.mission-card svg :is(path, circle, ellipse) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mission-card svg .solid { fill: currentColor; stroke: none; }
+.mission-card svg text { fill: currentColor; font: 700 9px ui-monospace, monospace; stroke: none; }
+
+/* Étiquettes du quadrillage : n° de km (2 chiffres) des carrés de 1 km,
+   colonne des ordonnées + ligne des abscisses du carré central. */
+.tq-grid-label span {
+  display: inline-block;
+  font: 700 20px ui-monospace, monospace;
+  white-space: nowrap;
+}
+.tq-grid-label.sat span { color: #e8e8e8; text-shadow: 0 0 3px #000, 0 1px 2px #000; }
+.tq-grid-label.plan span { color: #000; text-shadow: 0 0 3px #fff, 0 1px 2px #fff; }
+/* Ordonnée : en bas au milieu du carré (ancre = milieu du bord bas). */
+.tq-grid-ord span { transform: translate(-50%, -115%); }
+/* Abscisse : à gauche au milieu du carré (ancre = milieu du bord gauche). */
+.tq-grid-abs span { transform: translate(5px, -50%); }
+
+/* Étiquette d'un figuré de mission sur la carte (APP, N, C C…). */
+.tq-mission-label { white-space: nowrap; }
+.tq-mission-label span {
+  background: rgba(12, 16, 11, 0.7);
+  border-radius: 5px;
+  display: inline-block;
+  font: 700 13px/1.2 ui-monospace, monospace;
+  padding: 1px 5px;
+  transform: translate(-50%, -50%);
+}
+
+/* Écran étroit (téléphone) : tous les boutons flottants de la carte sont
+   réduits de 20 %. (Bloc placé APRÈS les règles de base qu'il surcharge :
+   à spécificité égale, le dernier gagne.) */
+@media (max-width: 700px) {
+  .fab { height: 43px; width: 43px; }
+  .fab svg { height: 21px; width: 21px; }
+  .comms-toggle { border-radius: 16px; font-size: 0.72rem; gap: 5px; min-height: 32px; padding: 5px 10px; }
+  .comms-toggle svg { height: 16px; width: 16px; }
+  .status-pill { border-radius: 16px; font-size: 0.76rem; gap: 6px; min-height: 32px; padding: 5px 11px; }
+  .coord-btn svg { height: 15px; width: 15px; }
+  #sketchbar .btn { min-height: 32px; padding: 5px 10px; }
+  /* Boutons de zoom Leaflet (44 px en mode tactile). */
+  .leaflet-touch .leaflet-bar a { height: 35px; line-height: 35px; width: 35px; }
+  /* Les rangées du haut sont moins hautes : remonter les contrôles Leaflet. */
+  .leaflet-top.leaflet-right { margin-top: calc(42px + env(safe-area-inset-top, 0px)); }
+  .leaflet-top.leaflet-left { margin-top: calc(90px + env(safe-area-inset-top, 0px)); }
+}
+
+/* ----- overlays / toast ----- */
+.overlay[hidden] { display: none; }
+.overlay {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: absolute;
+  z-index: 2000;
+}
+.overlay-card {
+  background: var(--panel);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 380px;
+  padding: 22px;
+}
+.overlay-card h2 { margin: 0; font-size: 1.1rem; }
+.overlay-card p { margin: 0; color: var(--muted); line-height: 1.4; }
+
+.diag-card { max-width: 560px; width: 100%; }
+.diag-hint { font-size: 0.78rem; }
+.diag-hint code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
+#diag-log {
+  background: var(--panel-2);
+  border-radius: 8px;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  margin: 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diag-actions { display: flex; gap: 8px; }
+.diag-actions .btn { flex: 1; }
+
+#toast {
+  align-items: center;
+  background: var(--panel-2);
+  border-radius: 10px;
+  bottom: 96px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  gap: 12px;
+  left: 50%;
+  max-width: 92vw;
+  padding: 12px 16px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 3000;
+}
+#toast[hidden] { display: none; }
+
+/* Leaflet : laisser la place à la pastille (en haut à droite) et aux deux
+   rangées du cluster haut-gauche (Comms/loupe + Tac) pour le zoom. */
+.leaflet-top.leaflet-right { margin-top: calc(50px + env(safe-area-inset-top, 0px)); }
+.leaflet-top.leaflet-left { margin-top: calc(108px + env(safe-area-inset-top, 0px)); }
+/* L'échelle (en bas à gauche) passe au-dessus des coordonnées */
+.leaflet-bottom.leaflet-left { margin-bottom: calc(42px + env(safe-area-inset-bottom, 0px)); }
+
+/* Leaflet : adapter au thème sombre */
+.leaflet-control-attribution {
+  background: rgba(16, 22, 15, 0.6) !important;
+  color: var(--muted) !important;
+  font-size: 9px !important;
+  line-height: 1.3 !important;
+  opacity: 0.7;
+  padding: 0 4px !important;
+}
+.leaflet-control-attribution a { color: var(--accent) !important; }
+.leaflet-control-layers { background: var(--panel) !important; color: var(--text) !important; border: 1px solid var(--panel-2) !important; }
+.leaflet-bar a { background: var(--panel) !important; color: var(--text) !important; border-color: var(--panel-2) !important; }
+
+/* ----- page d'installation (mobile, navigateur) ----- */
+/* Masque tout le site tant qu'elle est affichée. */
+body.install-locked { overflow: hidden; }
+body.install-locked #map-screen { display: none !important; }
+
+#install-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+}
+
+.install-card {
+  max-width: 420px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+}
+
+.install-logo {
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.install-card h1 { margin: 0; font-size: 1.5rem; letter-spacing: 0.04em; }
+.install-lead { margin: 0; color: var(--muted); line-height: 1.5; }
+
+.install-steps {
+  margin: 4px 0 0;
+  padding-left: 22px;
+  text-align: left;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  line-height: 1.5;
+}
+.install-steps b { color: var(--text); }
+
+.install-glyph {
+  display: inline-flex;
+  vertical-align: -5px;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+.install-glyph svg { width: 100%; height: 100%; }
+
+.install-skip {
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 8px 12px;
+}
+.install-skip:active { color: var(--text); }

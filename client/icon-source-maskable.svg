@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- fond bord à bord : le système peut rogner en cercle/squircle -->
+  <rect width="512" height="512" fill="#1a2a1a"/>
+  <!-- contenu réduit dans la zone de sécurité centrale (~78 %) -->
+  <g transform="translate(256 256) scale(0.78) translate(-256 -256)">
+    <path d="M 36 432 L 168 250 L 232 322 L 320 196 L 476 432 Z"
+          fill="#3a5230" stroke="#7da455" stroke-width="14" stroke-linejoin="round"/>
+    <path d="M 168 250 L 138 292 L 160 300 L 180 286 L 198 300 L 168 250 Z" fill="#e4ead8"/>
+    <path d="M 320 196 L 286 248 L 308 256 L 322 244 L 338 258 L 354 248 L 320 196 Z" fill="#e4ead8"/>
+    <circle cx="320" cy="150" r="86" fill="none" stroke="#e0392b" stroke-width="16"/>
+    <circle cx="320" cy="150" r="6" fill="#e0392b"/>
+    <line x1="320" y1="40"  x2="320" y2="116" stroke="#e0392b" stroke-width="16"/>
+    <line x1="320" y1="184" x2="320" y2="260" stroke="#e0392b" stroke-width="16"/>
+    <line x1="210" y1="150" x2="286" y2="150" stroke="#e0392b" stroke-width="16"/>
+    <line x1="354" y1="150" x2="430" y2="150" stroke="#e0392b" stroke-width="16"/>
+  </g>
+</svg>

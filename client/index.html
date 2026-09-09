@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1a2a1a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <title>TacticalQuest</title>
+</head>
+<body class="solo">
+
+  <!-- Écran carte : l'app s'ouvre directement dessus, en mode solo (body.solo)
+       tant qu'aucune salle n'est rejointe. -->
+  <div id="map-screen">
+    <div id="map"></div>
+
+    <div id="status-cluster">
+      <button id="btn-members" class="status-pill status-menu" title="Membres et salle" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        <span id="pending-badge" hidden></span>
+      </button>
+      <span id="member-status" class="status-pill">
+        <span id="conn-dot" class="conn-reconnecting"></span>
+        <span id="member-count">0</span>
+      </span>
+      <button id="btn-room" class="status-pill" title="Rejoindre ou créer une salle">Collab</button>
+    </div>
+
+    <!-- Rejoindre / créer une salle (indicatif + code) -->
+    <div id="room-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Salle</h3>
+        <label class="tool-modal-field">
+          <span>Indicatif</span>
+          <input id="room-callsign" type="text" maxlength="16" autocomplete="off"
+                 placeholder="Alpha 1" enterkeyhint="done">
+        </label>
+        <div class="join-row">
+          <input id="room-code" type="text" maxlength="5" autocomplete="off"
+                 autocapitalize="characters" placeholder="CODE" enterkeyhint="go">
+          <button id="btn-room-join" class="btn">Rejoindre</button>
+        </div>
+        <div class="separator"><span>ou</span></div>
+        <button id="btn-room-create" class="btn btn-primary">Créer une salle</button>
+        <div id="room-history" class="room-history" hidden>
+          <span class="room-history-label">Salles récentes</span>
+          <div id="room-history-list" class="room-history-list"></div>
+        </div>
+        <p id="room-error" class="error" hidden></p>
+        <button id="btn-replace" class="btn btn-replace" hidden></button>
+        <button id="btn-room-cancel" class="btn">Annuler</button>
+      </div>
+    </div>
+
+    <div id="topleft-cluster">
+      <div class="topleft-row">
+        <button id="btn-comms" class="comms-toggle" title="Comms">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 3.5z"/></svg>
+          <span>Comms</span>
+          <span id="comms-badge" hidden></span>
+        </button>
+        <button id="btn-place" class="comms-toggle" title="Rechercher un lieu" aria-label="Rechercher un lieu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.5-4.5"/></svg>
+        </button>
+      </div>
+      <div class="topleft-row">
+        <button id="btn-tac" class="comms-toggle" title="Figurés de mission">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 20 4M14 4h6v6M4 4l16 16M4 14v6h6"/></svg>
+          <span>Tac</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panneau Tac : figurés de mission (section / groupe) -->
+    <aside id="tac-panel" hidden>
+      <header class="panel-head">
+        <h2>Missions</h2>
+        <button id="tac-close" class="topbar-btn">Fermer</button>
+      </header>
+      <div id="tac-level" class="segmented">
+        <button data-level="section" class="selected">Section</button>
+        <button data-level="groupe">Groupe</button>
+      </div>
+      <div id="mission-list"></div>
+    </aside>
+
+    <!-- Recherche de lieu (géocodage IGN : adresses, communes, lieux-dits) -->
+    <div id="place-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Rechercher un lieu</h3>
+        <label class="tool-modal-field">
+          <span>Commune, adresse, lieu-dit…</span>
+          <input id="place-input" type="text" autocomplete="off"
+                 placeholder="ex. Mourmelon, Bois de la Grille" enterkeyhint="search">
+        </label>
+        <ul id="place-results" class="place-results" hidden></ul>
+        <p id="place-status" class="composer-label" hidden></p>
+        <div class="tool-modal-actions">
+          <button id="place-cancel" class="btn">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <aside id="comms-panel" hidden>
+      <header class="panel-head">
+        <h2>Comms</h2>
+        <button id="comms-close" class="topbar-btn">Fermer</button>
+      </header>
+      <ul id="comms-messages"></ul>
+      <div class="comms-composer">
+        <input id="comms-input" type="text" maxlength="500" autocomplete="off"
+               placeholder="Message…" enterkeyhint="send" />
+        <button id="comms-send" class="btn btn-primary" title="Envoyer" aria-label="Envoyer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 20 4l-6 16-3-7z"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <div id="crosshair" aria-hidden="true"></div>
+    <div id="protractor" aria-hidden="true" hidden></div>
+    <div id="protractor-readout" hidden></div>
+    <div id="coord-cluster">
+      <button id="coord-readout" title="Coordonnées du centre — touchez pour changer de format"></button>
+      <button id="coord-search" class="coord-btn" title="Aller à des coordonnées" aria-label="Aller à des coordonnées">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.5-4.5"/></svg>
+      </button>
+    </div>
+
+    <!-- Aller à des coordonnées saisies (MGRS ou lat/lng) -->
+    <div id="coord-search-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Aller à des coordonnées</h3>
+        <label class="tool-modal-field">
+          <span>MGRS ou lat/lng</span>
+          <input id="coord-search-input" type="text" autocomplete="off" placeholder="31U DQ 48774 43683  ·  45.123, 5.456">
+        </label>
+        <p id="coord-search-error" class="error" hidden>Coordonnées non reconnues.</p>
+        <div class="tool-modal-actions">
+          <button id="coord-search-cancel" class="btn">Annuler</button>
+          <button id="coord-search-ok" class="btn btn-primary">Y aller</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu contextuel d'esquisse : panneau vertical déplacé à gauche de l'outil actif -->
+    <div id="sketchbar" hidden>
+      <span id="sketch-info">0 m</span>
+      <div id="sketch-colors" hidden>
+        <button class="color-dot" data-color="#e8d44d" style="background:#e8d44d"></button>
+        <button class="color-dot" data-color="#0033ff" style="background:#0033ff"></button>
+        <button class="color-dot" data-color="#ff3b30" style="background:#ff3b30"></button>
+      </div>
+      <button id="sketch-add" class="btn" title="Poser un point sous le réticule">Point</button>
+      <button id="sketch-ok" class="btn btn-primary">Valider</button>
+      <div class="sketch-row">
+        <button id="sketch-undo" class="btn btn-icon" title="Retirer le dernier point" aria-label="Annuler le dernier point">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7 4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-1.5"/></svg>
+        </button>
+        <button id="sketch-cancel" class="btn btn-icon" title="Annuler" aria-label="Annuler">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Menu contextuel après tracé d'un liseré : nom + figuré d'échelon -->
+    <div id="line-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Ligne tracée</h3>
+        <label class="tool-modal-field">
+          <span>Nom (affiché à un bout)</span>
+          <input id="line-name" type="text" maxlength="24" placeholder="ex. LIMITE NORD" autocomplete="off">
+        </label>
+        <p class="composer-label">Figuré de centre — limite inter-unités</p>
+        <div class="line-echelons" id="line-echelons">
+          <button type="button" class="line-ech selected" data-echelon=""><span class="ech-glyph">—</span><small>Aucun</small></button>
+          <button type="button" class="line-ech" data-echelon="section"><span class="ech-glyph"><i class="ech-dot"></i><i class="ech-dot"></i><i class="ech-dot"></i></span><small>Section</small></button>
+          <button type="button" class="line-ech" data-echelon="company"><span class="ech-glyph"><i class="ech-bar"></i></span><small>Compagnie</small></button>
+          <button type="button" class="line-ech" data-echelon="battalion"><span class="ech-glyph"><i class="ech-bar"></i><i class="ech-bar"></i></span><small>Bataillon</small></button>
+        </div>
+        <div class="tool-modal-actions">
+          <button id="line-cancel" class="btn">Annuler</button>
+          <button id="line-ok" class="btn btn-primary">Valider</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu contextuel après tracé d'une box : nom centré dans le polygone -->
+    <div id="box-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Box tracée</h3>
+        <label class="tool-modal-field">
+          <span>Nom (affiché au centre)</span>
+          <input id="box-name" type="text" maxlength="24" placeholder="ex. ZONE ALPHA" autocomplete="off">
+        </label>
+        <div class="tool-modal-actions">
+          <button id="box-cancel" class="btn">Annuler</button>
+          <button id="box-ok" class="btn btn-primary">Valider</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu contextuel du plot ENI : texte affiché près du losange -->
+    <div id="eni-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Plot ennemi</h3>
+        <label class="tool-modal-field">
+          <span>Texte (affiché près du losange)</span>
+          <input id="eni-name" type="text" maxlength="24" placeholder="ex. CHAR, INF, VBL…" autocomplete="off">
+        </label>
+        <div class="tool-modal-actions">
+          <button id="eni-cancel" class="btn">Annuler</button>
+          <button id="eni-ok" class="btn btn-primary">Valider</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu contextuel du point nommé : nom + couleur du rond -->
+    <div id="point-menu" class="tool-modal" hidden>
+      <div class="tool-modal-card">
+        <h3>Point nommé</h3>
+        <label class="tool-modal-field">
+          <span>Nom (affiché à côté du rond)</span>
+          <input id="point-name" type="text" maxlength="24" placeholder="ex. OBJ ALPHA" autocomplete="off">
+        </label>
+        <p class="composer-label">Couleur du rond</p>
+        <div class="point-colors" id="point-colors">
+          <button type="button" class="color-dot selected" data-color="#e8d44d" style="background:#e8d44d"></button>
+          <button type="button" class="color-dot" data-color="#0033ff" style="background:#0033ff"></button>
+          <button type="button" class="color-dot" data-color="#5fb35a" style="background:#5fb35a"></button>
+          <button type="button" class="color-dot" data-color="#ff3b30" style="background:#ff3b30"></button>
+        </div>
+        <div class="tool-modal-actions">
+          <button id="point-cancel" class="btn">Annuler</button>
+          <button id="point-ok" class="btn btn-primary">Valider</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outils de dessin/mesure : bas droite. En paysage (peu de hauteur) le
+         groupe #fab-tools se replie derrière le bouton bascule #fab-toggle. -->
+    <div id="fab-stack">
+      <div id="fab-tools">
+      <div class="tool-row">
+        <button id="tool-compass" class="fab tool-fab" title="Orienter la carte selon la boussole (cap en haut)" aria-label="Boussole">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5 13 13l-4.5 2.5L11 11Z" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-protractor" class="fab tool-fab" title="Rapporteur : relever un azimut (degrés / millièmes)" aria-label="Rapporteur">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 16 A8.5 8.5 0 0 1 20.5 16 Z"/><path d="M12 7.5V9.4M16.3 8.6 15.3 10.3M7.7 8.6 8.7 10.3M19.4 11.8 17.7 12.7M4.6 11.8 6.3 12.7" stroke-width="1.3"/><circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-measure" class="fab tool-fab" title="Mesurer une distance" aria-label="Mesurer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8.5" width="19" height="7" rx="1"/><path d="M7 8.5v3M12 8.5v4M17 8.5v3"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-eni" class="fab tool-fab" title="Plot ennemi" aria-label="Plot ennemi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5 20.5 12 12 20.5 3.5 12Z"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-point" class="fab tool-fab" title="Ploter un point nommé" aria-label="Point nommé">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-line" class="fab tool-fab" title="Tracer un liseré" aria-label="Liseré">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 18 10 9.5l4.5 4L20 6"/><circle cx="4.5" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="6" r="1.7" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-arrow" class="fab tool-fab" title="Tracer une flèche (axe d'effort)" aria-label="Flèche">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18 17 7"/><path d="M11 7h6v6"/></svg>
+        </button>
+      </div>
+      <div class="tool-row">
+        <button id="tool-polygon" class="fab tool-fab" title="Dessiner une box (zone)" aria-label="Box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/></svg>
+        </button>
+      </div>
+      <button id="btn-locate" class="fab" title="Centrer sur moi" aria-label="Centrer sur moi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="6"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg>
+      </button>
+      </div>
+      <!-- Bascule du menu d'outils : affiché seulement quand la hauteur manque. -->
+      <button id="fab-toggle" class="fab" title="Outils" aria-label="Outils" aria-expanded="false">
+        <svg class="ft-open" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        <svg class="ft-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <aside id="drawer" hidden>
+      <header class="drawer-head">
+        <span class="drawer-label">Salle</span>
+        <button id="room-code-btn" class="topbar-btn" title="Copier / partager le code"></button>
+        <span class="topbar-spacer"></span>
+        <button id="btn-leave" class="topbar-btn topbar-danger">Quitter</button>
+      </header>
+      <h2>Membres</h2>
+      <ul id="member-list"></ul>
+      <h2>Options</h2>
+      <div class="option-row">
+        <span>Coordonnées</span>
+        <div id="coord-format" class="segmented">
+          <button data-fmt="mgrs">MGRS</button>
+          <button data-fmt="utm">UTM</button>
+          <button data-fmt="latlng">Géo</button>
+        </div>
+      </div>
+      <div class="option-row">
+        <span>Quadrillage km</span>
+        <div id="grid-toggle" class="segmented">
+          <button data-grid="on">Affiché</button>
+          <button data-grid="off">Masqué</button>
+        </div>
+      </div>
+      <div class="option-row">
+        <span>Figurés et tracés</span>
+        <button id="btn-clear-map" class="btn btn-danger">Tout effacer</button>
+      </div>
+      <!-- Diagnostic veille masqué : conservé pour un usage ultérieur. -->
+      <div class="option-row" hidden>
+        <span>Diagnostic veille</span>
+        <button id="btn-diag" class="topbar-btn">Ouvrir</button>
+      </div>
+    </aside>
+
+    <div id="diag-overlay" class="overlay" hidden>
+      <div class="overlay-card diag-card">
+        <h2>Diagnostic veille</h2>
+        <p class="diag-hint">Verrouille l'écran, attends 1–2 min, déverrouille,
+           rouvre ce panneau. Repère les trous (+Xs) et les lignes <code>gps</code>.</p>
+        <pre id="diag-log"></pre>
+        <div class="diag-actions">
+          <button id="diag-copy" class="btn">Copier</button>
+          <button id="diag-clear" class="btn">Vider</button>
+          <button id="diag-close" class="btn btn-primary">Fermer</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="geo-overlay" class="overlay" hidden>
+      <div class="overlay-card">
+        <h2>Position indisponible</h2>
+        <p>L'accès à la position est refusé ou indisponible. Les autres membres ne
+           verront pas votre position, mais la carte reste fonctionnelle.</p>
+        <p>Autorisez la localisation dans les réglages du navigateur, puis réessayez.</p>
+        <button id="btn-geo-retry" class="btn btn-primary">Réessayer</button>
+        <button id="btn-geo-dismiss" class="btn">Continuer sans position</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" hidden>
+    <span id="toast-text"></span>
+    <button id="toast-action" class="btn" hidden></button>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

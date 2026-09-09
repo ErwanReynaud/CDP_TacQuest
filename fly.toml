@@ -1,0 +1,39 @@
+# TacticalQuest — déploiement Fly.io.
+# `fly launch` peut écraser/compléter ce fichier ; le nom d'app doit être unique
+# sur Fly (modifie `app` si "tacticalquest" est déjà pris).
+app = "tacquest"
+primary_region = "cdg"   # Paris
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATA_DIR = "/data"     # = destination du volume monté ci-dessous
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Always-on : pas de scale-to-zero (c'est tout l'intérêt de l'offre payante).
+  # L'état vit en RAM et n'est snapshotté que toutes les ~10 s, donc on ne veut
+  # pas que la machine s'arrête entre deux sessions.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+# Volume persistant : survit aux redémarrages/redéploiements. Le snapshot y est
+# écrit (DATA_DIR=/data -> /data/snapshot.json). À créer une fois :
+#   fly volumes create tq_data --region cdg --size 1
+[mounts]
+  source = "tq_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"   # 256mb suffit probablement ; 512 par sécurité (socket.io).

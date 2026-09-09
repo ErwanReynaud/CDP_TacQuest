@@ -1,0 +1,20 @@
+# TacticalQuest — reverse proxy TLS devant le serveur Node (port 3000).
+# La géolocalisation et le service worker exigent HTTPS.
+#
+# Cas 1 — VPS avec nom de domaine (certificat Let's Encrypt automatique) :
+#   remplacer tactical.example.com par votre domaine, puis `caddy run`.
+#
+# Cas 2 — laptop de terrain / LAN sans internet :
+#   décommenter le bloc du bas, commenter celui du haut.
+#   Caddy génère sa propre CA ; il faut installer le certificat racine
+#   (~/.local/share/caddy/pki/authorities/local/root.crt) une fois sur
+#   chaque téléphone (Paramètres → Sécurité → Installer un certificat).
+
+tactical.example.com {
+	reverse_proxy localhost:3000
+}
+
+# tactical.local:443 {
+# 	tls internal
+# 	reverse_proxy localhost:3000
+# }
