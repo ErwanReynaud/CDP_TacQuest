@@ -8,12 +8,12 @@
 //  - `authorId` et le nœud auteur d'un identifiant ne passent jamais sur le fil
 //    quand ils valent l'émetteur du paquet : ils viennent du champ `from`.
 
-import type { GraphicStyle, LineEchelon, OrderMessage } from '../protocol.ts';
-import { ECHELONS, GEOM, MESH_PROTOCOL_VERSION, MISSION_UNKNOWN, OP } from './constants.ts';
-import { MeshCodecError, Reader, Writer } from './bytes.ts';
-import { type Anchor, decodeOffset, encodeOffset } from './geo.ts';
-import { colorToIndex, indexToColor, indexToSidc, sidcToIndex } from './palette.ts';
-import { formatOrderId, type OrderId, parseOrderId } from './ids.ts';
+import type { GraphicStyle, LineEchelon, OrderMessage } from '../protocol';
+import { ECHELONS, GEOM, MESH_PROTOCOL_VERSION, MISSION_UNKNOWN, OP } from './constants';
+import { MeshCodecError, Reader, Writer } from './bytes';
+import { type Anchor, decodeOffset, encodeOffset } from './geo';
+import { colorToIndex, indexToColor, indexToSidc, sidcToIndex } from './palette';
+import { formatOrderId, type OrderId, parseOrderId } from './ids';
 
 /** Contexte partagé nécessaire pour coder ou décoder une trame. */
 export interface MeshContext {
@@ -61,6 +61,35 @@ const header = (op: number): number => ((MESH_PROTOCOL_VERSION & 0x0f) << 4) | (
 // ---------------------------------------------------------------------------
 
 type Pt = [lng: number, lat: number]; // ordre GeoJSON
+
+/**
+ * Schéma fermé attendu par le codec pour `graphic.geojson`.
+ *
+ * `OrderPayload` garde `geojson: unknown` : le serveur relaie des ordres émis
+ * par des clients quelconques, et orderFilter.ts valide déjà défensivement.
+ * Le codec binaire, lui, a besoin d'un ensemble fermé — il valide donc à
+ * l'entrée plutôt que de faire confiance à un transtypage.
+ */
+export interface LineStringFeature {
+  type: 'Feature';
+  properties: Record<string, unknown>;
+  geometry: { type: 'LineString'; coordinates: [number, number][] };
+}
+
+/** Valide et extrait les sommets ; renvoie `null` si la forme ne convient pas. */
+function coordsOf(geojson: unknown): Pt[] | null {
+  if (typeof geojson !== 'object' || geojson === null) return null;
+  const geometry = (geojson as { geometry?: unknown }).geometry;
+  if (typeof geometry !== 'object' || geometry === null) return null;
+  const g = geometry as { type?: unknown; coordinates?: unknown };
+  if (g.type !== 'LineString' || !Array.isArray(g.coordinates)) return null;
+  const out: Pt[] = [];
+  for (const c of g.coordinates) {
+    if (!Array.isArray(c) || typeof c[0] !== 'number' || typeof c[1] !== 'number') return null;
+    out.push([c[0], c[1]]);
+  }
+  return out;
+}
 
 /** Détecte un rectangle à axes alignés (tolérance 1 m, soit le pas de quantification). */
 function asRect(offs: { dE: number; dN: number }[]): { dE: number; dN: number; w: number; h: number } | null {
@@ -160,10 +189,9 @@ export function encodeOrder(order: OrderMessage, ctx: MeshContext): Uint8Array {
       break;
     }
     case 'graphic': {
-      const gj = p.geojson as { geometry?: { coordinates?: Pt[] } } | undefined;
-      const coords = gj?.geometry?.coordinates;
-      if (!Array.isArray(coords) || coords.length < 2) {
-        throw new MeshCodecError('géométrie graphique absente ou trop courte');
+      const coords = coordsOf(p.geojson);
+      if (!coords || coords.length < 2) {
+        throw new MeshCodecError('géométrie graphique absente, malformée ou trop courte');
       }
       const offs = coords.map(([lng, lat]) => {
         const o = encodeOffset(ctx.anchor, lat, lng);
@@ -440,7 +468,9 @@ export function encodeOrderFitted(order: OrderMessage, ctx: MeshContext): Fitted
   }
 
   const p = order.payload as Extract<OrderMessage['payload'], { kind: 'graphic' }>;
-  let pts = p.geojson.geometry.coordinates as Pt[];
+  const coords = coordsOf(p.geojson);
+  if (!coords) throw new MeshCodecError('géométrie graphique malformée');
+  let pts = coords;
   const initial = pts.length;
 
   while (pts.length > 2) {
@@ -451,7 +481,11 @@ export function encodeOrderFitted(order: OrderMessage, ctx: MeshContext): Fitted
       ...order,
       payload: {
         ...p,
-        geojson: { ...p.geojson, geometry: { ...p.geojson.geometry, coordinates: pts } },
+        geojson: {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: pts },
+        } satisfies LineStringFeature,
       },
     };
     try {

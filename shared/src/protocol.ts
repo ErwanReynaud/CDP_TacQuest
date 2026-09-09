@@ -70,10 +70,24 @@ export type OrderPayload =
   | { kind: 'waypoint'; name: string; lat: number; lng: number; sidc?: string; color?: string }
   | { kind: 'graphic'; geojson: unknown; style?: GraphicStyle }
   | { kind: 'remove'; orderId: string }
-  | { kind: 'ack'; orderId: string };
+  | { kind: 'ack'; orderId: string }
+  /**
+   * Effacement en masse : masque tout ordre dont `ts <= beforeTs`. Introduit
+   * pour le mode mesh, où « effacer la carte » émettait un ordre `remove` par
+   * figuré — 40 paquets LoRa là où un seul suffit. Utile aussi en mode serveur,
+   * où clearWholeMap() consomme d'un coup la moitié du quota ORDER_MAX_PER_WINDOW.
+   */
+  | { kind: 'clear'; beforeTs: number };
 
 export interface OrderMessage {
-  /** uuid généré côté client (ré-émission idempotente). */
+  /**
+   * Identifiant généré côté client, ré-émission idempotente.
+   *
+   * Format `node:seq` (8 hex, deux-points, 4 hex) en mode mesh, où un uuid
+   * coûtait 16 o binaires — et `remove`/`ack` en référencent un second. Le
+   * serveur ne l'interprète pas, le format est donc purement client et vaut
+   * dans les deux modes. Voir shared/src/mesh/ids.ts.
+   */
   id: string;
   authorId: string;
   ts: number;

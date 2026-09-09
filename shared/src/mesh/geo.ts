@@ -4,7 +4,7 @@
 // coûte ensuite que 4 o (dE, dN en mètres), pour une enveloppe de ±32,7 km et
 // une résolution de 1 m. Un rectangle tient donc en 8 o de géométrie.
 
-import { ANCHOR_RANGE_M } from './constants.ts';
+import { ANCHOR_RANGE_M } from './constants';
 
 /** Ancre de zone d'opération, stockée en 1e-7 degré (même échelle que Meshtastic). */
 export interface Anchor {

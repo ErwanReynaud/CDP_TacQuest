@@ -3,7 +3,7 @@
 // Pas de dépendance : le même code tourne dans le navigateur (transport BLE) et
 // sous Node (tests, pont serveur).
 
-import { MESH_MAX_PAYLOAD } from './constants.ts';
+import { MESH_MAX_PAYLOAD } from './constants';
 
 /** Dépassement du budget de trame, ou trame tronquée/corrompue. */
 export class MeshCodecError extends Error {

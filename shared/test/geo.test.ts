@@ -1,6 +1,6 @@
 // Tests de la quantification des coordonnées.
 
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
 import {
@@ -11,8 +11,8 @@ import {
   metresPerDegLat,
   metresPerDegLng,
   withinAnchor,
-} from '../src/mesh/geo.ts';
-import { ANCHOR_RANGE_M } from '../src/mesh/constants.ts';
+} from '../src/mesh/geo';
+import { ANCHOR_RANGE_M } from '../src/mesh/constants';
 
 const ANCHOR = { lat: 45.0, lng: 5.0 };
 

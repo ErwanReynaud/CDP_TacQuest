@@ -1,6 +1,6 @@
 // Couleurs et dictionnaires : sur le fil, tout est un index.
 
-import { MESH_PALETTE, MESH_SIDC_DICT } from './constants.ts';
+import { MESH_PALETTE, MESH_SIDC_DICT } from './constants';
 
 function parseHex(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());

@@ -1,4 +1,6 @@
 // Constantes de la couche mesh (Meshtastic / LoRa).
+
+import { HOSTILE_SIDC } from '../constants';
 //
 // Volontairement séparé de shared/src/constants.ts : ce dernier dimensionne le
 // mode serveur (Socket.IO), dont les budgets sont sans rapport avec la radio.
@@ -74,10 +76,25 @@ export const MESH_PALETTE: readonly string[] = [
  * lui est réservé pour que le cas courant tienne en un octet.
  */
 export const MESH_SIDC_DICT: readonly string[] = [
-  'SHGPU----------', // HOSTILE_SIDC (plot ENI)
-  'SFGPU----------', // ami générique
-  'SNGPU----------', // neutre
-  'SUGPU----------', // inconnu
+  HOSTILE_SIDC, // index 0 : plot ENI, le cas courant, tient en un octet
+  'SFGP-------', // ami générique
+  'SNGP-------', // neutre
+  'SUGP-------', // inconnu
+];
+
+/**
+ * Ordre de référence des figurés de mission sur le fil : l'index d'une mission
+ * est sa position dans ce tableau.
+ *
+ * Contrat de compatibilité : on n'insère et on ne réordonne JAMAIS — une
+ * nouvelle mission s'ajoute en fin de liste. Sans quoi deux nœuds de versions
+ * différentes afficheraient chacun un figuré différent pour le même octet.
+ * Un test client vérifie que cette liste couvre exactement MISSIONS.
+ */
+export const MESH_MISSION_IDS: readonly string[] = [
+  'semp', 'app', 'appf', 'sout', 'neut', 'det', 'fix',
+  'interd', 'def', 'ten', 'recu',
+  'ecl', 'reco', 'couv', 'boucl', 'surv',
 ];
 
 /** Index « catalogue de mission inconnu » — rendu en ligne simple côté client. */

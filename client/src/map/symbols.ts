@@ -6,8 +6,10 @@ import { escapeHtml } from '../util';
 // en simples points GPS (cf. markers.ts) depuis l'abandon des figurés
 // hiérarchiques de commandement côté interface.
 
-/** Losange rouge APP-6 : unité terrestre hostile, sans fonction. */
-export const HOSTILE_SIDC = 'SHGP-------';
+/** Losange rouge APP-6 : unité terrestre hostile, sans fonction.
+ *  Défini dans @tq/shared (le codec mesh l'indexe) et réexporté ici pour que
+ *  les appelants existants n'aient pas à changer d'import. */
+export { HOSTILE_SIDC } from '@tq/shared/constants';
 
 // Le rendu milsymbol n'est pas gratuit sur CPU faible : mémoïsation.
 const plotCache = new Map<string, L.DivIcon>();

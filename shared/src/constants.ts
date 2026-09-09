@@ -13,6 +13,10 @@ export const CALLSIGN_REGEX = /^[\p{L}\p{N} _-]{1,16}$/u;
 // pour valider le SIDC des plots ENI (cf. orders.ts, HOSTILE_SIDC).
 export const SIDC_REGEX = /^[A-Za-z0-9*-]{10,30}$/;
 export const DEFAULT_SIDC = 'SFGPE----------'; // CDS (rond, chef de section)
+/** Losange rouge APP-6 : unité terrestre hostile, sans fonction (plots ENI).
+ *  Ici et non dans client/map/symbols.ts, qui importe Leaflet : le codec mesh
+ *  en a besoin, et un module de dictionnaire ne doit pas tirer le DOM. */
+export const HOSTILE_SIDC = 'SHGP-------';
 
 // Rôle d'un membre dans l'arbre hiérarchique de commandement :
 //   CDU (unité) > CDS:S (section 1-3) > CDG:S:G (groupe 1-3) >

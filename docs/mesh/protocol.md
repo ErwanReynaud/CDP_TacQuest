@@ -416,9 +416,23 @@ d'un mode à l'autre **sans table de correspondance**, et la déduplication par
 | Fichier | Modification | Justification |
 |---|---|---|
 | `protocol.ts` | `OrderPayload` gagne `{ kind: 'clear'; beforeTs: number }` | effacement en masse en un paquet ; « un nouveau `kind` est un changement client uniquement » |
-| `protocol.ts` | `graphic.geojson: unknown` → `LineStringFeature` | un codec binaire exige un ensemble fermé ; l'UI n'a jamais émis autre chose |
 | `protocol.ts` | documentation du format de `id` | le format passe d'uuid à `node:seq` |
+| `constants.ts` | `HOSTILE_SIDC` y est déplacé | `map/symbols.ts` importe Leaflet ; un dictionnaire indexé par le codec ne doit pas tirer le DOM. `symbols.ts` le réexporte, les appels existants ne bougent pas |
 
-**Consommateurs à mettre à jour** (fichiers non fournis à ce jour) :
-`map/orderFilter.ts` doit filtrer sur `clear`, et le rendu des Comms ne doit pas
-afficher un `clear` comme un message.
+`graphic.geojson` reste volontairement typé `unknown` : le serveur relaie des
+ordres émis par des clients quelconques, et `map/orderFilter.ts` valide déjà la
+forme défensivement. Le schéma fermé dont le codec a besoin
+(`LineStringFeature`) vit donc dans `shared/src/mesh/codec.ts`, qui **valide** à
+l'entrée au lieu de transtyper.
+
+**Consommateurs à mettre à jour :** `map/orderFilter.ts` doit filtrer sur
+`clear`, et le rendu des Comms ne doit pas afficher un `clear` comme un message.
+
+### Alignement des dictionnaires
+
+`MESH_SIDC_DICT[0]` **est** `HOSTILE_SIDC` (référence directe, pas une copie) :
+la dérive est impossible par construction. L'ordre des missions
+(`MESH_MISSION_IDS`, 16 entrées) ne peut pas être vérifié de la même façon
+— `shared/` ne doit pas dépendre de `client/` — il est donc gardé par
+`client/src/map/meshCatalog.test.ts`, qui échoue si le catalogue et la table de
+référence divergent.

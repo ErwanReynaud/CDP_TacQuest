@@ -1,13 +1,14 @@
 // Tests du codec binaire : aller-retour, budgets d'octets, dégradations.
 
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
-import type { LineStringFeature, OrderMessage } from '../src/protocol.ts';
-import { MESH_MAX_PAYLOAD, MISSION_UNKNOWN } from '../src/mesh/constants.ts';
-import { MeshCodecError } from '../src/mesh/bytes.ts';
+import type { OrderMessage } from '../src/protocol';
+import { MESH_MAX_PAYLOAD, MISSION_UNKNOWN } from '../src/mesh/constants';
+import { MeshCodecError } from '../src/mesh/bytes';
 import {
   type DecodeContext,
+  type LineStringFeature,
   decodeFrame,
   encodeAnchor,
   encodeDigest,
@@ -16,8 +17,8 @@ import {
   encodeOrderFitted,
   encodeReq,
   nodeToMemberId,
-} from '../src/mesh/codec.ts';
-import { encodeOffset } from '../src/mesh/geo.ts';
+} from '../src/mesh/codec';
+import { encodeOffset } from '../src/mesh/geo';
 
 const NODE = 0xa4f2c810;
 const ANCHOR = { lat: 45.0, lng: 5.0 };
@@ -43,6 +44,13 @@ function feature(coords: [number, number][]): LineStringFeature {
   };
 }
 
+/** Sommets d'un ordre graphic : `geojson` est `unknown` côté protocole (le
+ *  serveur relaie des ordres de clients quelconques), le codec le valide. */
+function coordsOf(payload: OrderMessage['payload']): [number, number][] {
+  assert.equal(payload.kind, 'graphic');
+  return (payload as { geojson: LineStringFeature }).geojson.geometry.coordinates;
+}
+
 /** Tolérance d'aller-retour : le pas de quantification (1 m ≈ 1e-5°). */
 function assertNear(a: number, b: number, tolDeg = 1e-5): void {
   assert.ok(Math.abs(a - b) < tolDeg, `${a} ≉ ${b}`);
@@ -54,7 +62,7 @@ test('plot ENI : aller-retour et budget', () => {
     authorId: nodeToMemberId(NODE),
     ts: TS,
     kind: 'waypoint',
-    payload: { kind: 'waypoint', name: 'ENI', lat: 45.012, lng: 5.031, sidc: 'SHGPU----------' },
+    payload: { kind: 'waypoint', name: 'ENI', lat: 45.012, lng: 5.031, sidc: 'SHGP-------' },
   };
   const { order, size } = roundtrip(src);
   assert.equal(order.id, src.id);
@@ -63,7 +71,7 @@ test('plot ENI : aller-retour et budget', () => {
   assert.equal(order.kind, 'waypoint');
   const p = order.payload as Extract<typeof order.payload, { kind: 'waypoint' }>;
   assert.equal(p.name, 'ENI');
-  assert.equal(p.sidc, 'SHGPU----------');
+  assert.equal(p.sidc, 'SHGP-------');
   assert.equal(p.color, undefined);
   assertNear(p.lat, 45.012);
   assertNear(p.lng, 5.031);
@@ -105,11 +113,11 @@ test('rectangle : cible 10-15 octets du cahier des charges', () => {
   assert.ok(size >= 10 && size <= 15, `rectangle encodé en ${size} o, cible 10-15`);
   const p = order.payload as Extract<typeof order.payload, { kind: 'graphic' }>;
   assert.equal(p.style?.polygon, true);
-  assert.equal(p.geojson.geometry.coordinates.length, 5);
+  assert.equal(coordsOf(p).length, 5);
   // Les 4 coins reviennent à leur place (fermeture incluse).
   for (let i = 0; i < 5; i++) {
-    assertNear(p.geojson.geometry.coordinates[i]![0]!, corners[i]![0]!);
-    assertNear(p.geojson.geometry.coordinates[i]![1]!, corners[i]![1]!);
+    assertNear(coordsOf(p)[i]![0]!, corners[i]![0]!);
+    assertNear(coordsOf(p)[i]![1]!, corners[i]![1]!);
   }
 });
 
@@ -176,7 +184,7 @@ test('figuré de mission : index connu conservé, index inconnu dégradé en lig
     { kind: 'graphic' }
   >;
   assert.equal(p.style?.mission, undefined);
-  assert.equal(p.geojson.geometry.coordinates.length, 2);
+  assert.equal(coordsOf(p).length, 2);
 });
 
 test('remove : la référence à soi élide le numéro de nœud', () => {
@@ -368,11 +376,11 @@ test('aucune trame ne dépasse le budget, même au pire cas', () => {
   const decoded = decodeFrame(fitted.bytes, ctx);
   const p = (decoded as { kind: 'order'; order: OrderMessage }).order
     .payload as Extract<OrderMessage['payload'], { kind: 'graphic' }>;
-  assert.equal(p.geojson.geometry.coordinates.length, 40 - fitted.droppedPoints);
+  assert.equal(coordsOf(p).length, 40 - fitted.droppedPoints);
   assert.equal(p.style?.label, 'X'.repeat(32));
   assert.equal(p.style?.mission, 'RECO');
   // Les extrémités du tracé sont préservées par la décimation.
-  const coords = p.geojson.geometry.coordinates;
+  const coords = coordsOf(p);
   assertNear(coords[0]![0]!, 5.0);
   assertNear(coords[coords.length - 1]![0]!, 5.0 + 39 * 0.0013);
 });
