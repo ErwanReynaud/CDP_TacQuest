@@ -1,4 +1,5 @@
 import type { MemberPublic, OrderMessage, RoomState } from '@tq/shared/protocol';
+import { mergeOrder } from './crdt/orders';
 
 export interface Session {
   roomCode: string;
@@ -28,12 +29,44 @@ type Listener = (detail?: unknown) => void;
 const listeners = new Map<BusEvent, Set<Listener>>();
 
 export const bus = {
-  on(event: BusEvent, fn: Listener): void {
-    if (!listeners.has(event)) listeners.set(event, new Set());
-    listeners.get(event)!.add(fn);
+  /** S'abonne à un événement. La fonction rendue se désabonne. */
+  on(event: BusEvent, fn: Listener): () => void {
+    let set = listeners.get(event);
+    if (!set) {
+      set = new Set();
+      listeners.set(event, set);
+    }
+    set.add(fn);
+    return () => {
+      set.delete(fn);
+    };
   },
+
+  off(event: BusEvent, fn: Listener): void {
+    listeners.get(event)?.delete(fn);
+  },
+
+  /**
+   * Diffuse un événement. Chaque écouteur est isolé.
+   *
+   * Sans ce cloisonnement, un écouteur qui lève empêchait tous les suivants de
+   * tourner et l'exception remontait dans l'émetteur — un paquet radio
+   * malformé atteignant un écouteur d'interface aurait coupé toute la chaîne
+   * de réception. Une erreur d'affichage ne doit pas faire tomber le transport.
+   *
+   * L'itération porte sur une copie : un écouteur peut s'abonner ou se
+   * désabonner pendant la diffusion sans perturber le tour en cours.
+   */
   emit(event: BusEvent, detail?: unknown): void {
-    listeners.get(event)?.forEach((fn) => fn(detail));
+    const set = listeners.get(event);
+    if (!set) return;
+    for (const fn of [...set]) {
+      try {
+        fn(detail);
+      } catch (err) {
+        console.error(`[bus] écouteur ${event} en échec`, err);
+      }
+    }
   },
 };
 
@@ -63,18 +96,36 @@ export interface RoomHistoryEntry {
   ts: number;
 }
 
-export function saveSession(s: Session): void {
+/**
+ * Enregistre la session courante.
+ *
+ * Renvoie `false` si la persistance a échoué — quota dépassé, navigation
+ * privée, stockage bloqué. La session reste alors valide **en mémoire** : on
+ * entre bien dans la salle, mais elle ne survivra pas à un rechargement.
+ *
+ * Auparavant l'écriture n'était pas protégée : elle levait après avoir déjà
+ * muté `state.session`, laissant une session à moitié établie — en mémoire
+ * mais sans interface de salle — et l'appelant rapportait « Serveur
+ * injoignable » pour une panne de stockage.
+ *
+ * localStorage et non sessionStorage : la PWA mobile est régulièrement tuée en
+ * arrière-plan par l'OS, ce qui efface sessionStorage et fait retomber
+ * l'utilisateur sur l'accueil. localStorage survit à la fermeture/relance ; le
+ * re-binding serveur via sessionToken reprend la place dans la room.
+ */
+export function saveSession(s: Session): boolean {
   state.session = s;
-  // localStorage (et non sessionStorage) : la PWA mobile est régulièrement tuée
-  // en arrière-plan par l'OS, ce qui efface sessionStorage et fait retomber
-  // l'utilisateur sur l'accueil. localStorage survit à la fermeture/relance ;
-  // le re-binding serveur via sessionToken reprend la place dans la room.
-  localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-  localStorage.setItem(
-    LAST_ROOM_KEY,
-    JSON.stringify({ roomCode: s.roomCode, callsign: s.callsign } satisfies LastRoom),
-  );
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    localStorage.setItem(
+      LAST_ROOM_KEY,
+      JSON.stringify({ roomCode: s.roomCode, callsign: s.callsign } satisfies LastRoom),
+    );
+  } catch {
+    return false;
+  }
   rememberRoom(s.roomCode, s.callsign);
+  return true;
 }
 
 export function loadSession(): Session | null {
@@ -92,7 +143,13 @@ export function clearSession(): void {
   state.session = null;
   state.members.clear();
   state.orders.clear();
-  localStorage.removeItem(SESSION_KEY);
+  // Sans cela, la pastille restait « Connecté » une fois revenu en solo.
+  setConn('reconnecting');
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* stockage indisponible : la session en mémoire est déjà effacée */
+  }
 }
 
 /** Indicatif mémorisé pour pré-remplir la modale de salle aux prochains join. */
@@ -153,10 +210,38 @@ export function removeRoomFromHistory(roomCode: string): void {
   saveRoomHistory(loadRoomHistory().filter((e) => e.roomCode !== roomCode));
 }
 
-/** Applique un snapshot complet — réconciliation sans diff. */
+/**
+ * Applique un snapshot serveur.
+ *
+ * Le roster est remplacé — le serveur en est la source de vérité — mais les
+ * ordres sont **fusionnés**. Le serveur ne conserve que les
+ * `MAX_RECENT_ORDERS` derniers : au-delà, les plus anciens tombent de son
+ * tampon. Un remplacement effaçait alors chez le client qui se reconnecte des
+ * figurés que les autres continuaient d'afficher, sans qu'aucune couche ne
+ * s'en aperçoive. La fusion est idempotente et retient la version la plus
+ * récente de chaque ordre.
+ *
+ * Le changement de salle reste un remplacement : sans quoi les figurés de la
+ * salle précédente se déverseraient dans la nouvelle. `rs.code` distingue les
+ * deux cas — une reconnexion porte le même code, un join un autre.
+ */
 export function applyRoomState(rs: RoomState): void {
+  const sameRoom = state.session?.roomCode === rs.code;
+  const selfId = state.session?.memberId;
+  const selfBefore = selfId ? state.members.get(selfId) : undefined;
+
   state.members = new Map(rs.members.map((m) => [m.id, m]));
-  state.orders = new Map(rs.recentOrders.map((o) => [o.id, o]));
+  // Le serveur n'écho pas nos propres positions : sans ce report, on
+  // disparaissait du compteur et du tiroir jusqu'au fix suivant, soit 30 s.
+  if (selfId && selfBefore?.lastPosition) {
+    const fresh = state.members.get(selfId);
+    if (fresh) fresh.lastPosition ??= selfBefore.lastPosition;
+    else state.members.set(selfId, selfBefore);
+  }
+
+  if (!sameRoom) state.orders.clear();
+  for (const o of rs.recentOrders) mergeOrder(state.orders, o);
+
   bus.emit('members');
   bus.emit('orders');
 }

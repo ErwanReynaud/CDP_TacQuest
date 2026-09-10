@@ -76,7 +76,6 @@ incompatible.
 - Gouverneur d'airtime avec files par priorité (alerte > ordre > position >
   digest).
 - Validation sur matériel : séquence dans [`docs/mesh/tests.md`](docs/mesh/tests.md).
-- Correctifs d'audit non traités, hors périmètre transport : `applyRoomState`
-  écrase l'entrée roster locale et le ring buffer `MAX_RECENT_ORDERS` fait
-  diverger un client reconnecté ; `saveSession` peut lever et laisser une
-  session à moitié établie ; `bus.emit` n'isole pas les erreurs d'écouteur.
+- Reliquat d'audit, mineur : le code de salle n'est pas validé contre
+  `ROOM_CODE_ALPHABET` côté client, `navigator.clipboard` est appelé sans garde
+  dans le partage du code, et `#btn-replace` échappe à `setBusy`.

@@ -1,5 +1,6 @@
 import { CALLSIGN_REGEX, ROOM_CODE_LENGTH } from '@tq/shared/constants';
 import type { ErrorCode } from '@tq/shared/protocol';
+import type { Session } from '../state';
 import {
   loadCallsign,
   loadLastRoom,
@@ -9,7 +10,7 @@ import {
   saveSession,
 } from '../state';
 import { createRoom, joinRoom, FIXED_ROLE } from '../transport';
-import { enterRoomUi } from './mapView';
+import { enterRoomUi, toast } from './mapView';
 
 // Les codes POST_TAKEN* ne peuvent plus arriver (tout le monde entre en 'GV',
 // seul rôle sans unicité) mais le type ErrorCode les exige toujours.
@@ -83,25 +84,33 @@ export function initRoomMenu(): void {
     if (!callsign) return;
     setBusy(true);
     showError(null);
+
+    // Le try ne couvre que l'appel réseau. Il englobait auparavant jusqu'à
+    // enterRoomUi() : n'importe quelle exception du rendu carte s'affichait
+    // alors comme « Serveur injoignable », envoyant l'utilisateur vérifier une
+    // connexion qui marchait très bien.
+    let res: Awaited<ReturnType<typeof createRoom>>;
     try {
-      const res = await createRoom(callsign);
-      if (!res.ok) return showError(ERROR_FR[res.error]);
-      saveSession({
+      res = await createRoom(callsign);
+    } catch {
+      showError('Serveur injoignable. Vérifiez la connexion.');
+      return;
+    } finally {
+      setBusy(false);
+    }
+    if (!res.ok) return showError(ERROR_FR[res.error]);
+
+    enterRoom(
+      {
         roomCode: res.roomCode,
         memberId: res.memberId,
         sessionToken: res.sessionToken,
         callsign,
         role: FIXED_ROLE,
         isLeader: true,
-      });
-      saveCallsign(callsign);
-      closeRoomMenu();
-      enterRoomUi();
-    } catch {
-      showError('Serveur injoignable. Vérifiez la connexion.');
-    } finally {
-      setBusy(false);
-    }
+      },
+      callsign,
+    );
   });
 
   $('btn-room-join').addEventListener('click', () => void attemptJoin());
@@ -133,39 +142,64 @@ async function attemptJoin(replace = false): Promise<void> {
   setBusy(true);
   showError(null);
   hideReplace();
+
+  // Comme pour la création : le try se limite à l'appel réseau.
+  let res: Awaited<ReturnType<typeof joinRoom>>;
   try {
-    const res = await joinRoom(code, callsign, replace);
-    if (!res.ok) {
-      // Salle disparue (GC serveur) : on purge l'entrée d'historique périmée.
-      if (res.error === 'ROOM_NOT_FOUND') {
-        removeRoomFromHistory(code);
-        renderHistory();
-      }
-      // Indicatif tenu par un membre déconnecté : on propose de le remplacer.
-      if (res.error === 'CALLSIGN_TAKEN_DISCONNECTED') {
-        showError(ERROR_FR[res.error]);
-        const btn = $('btn-replace');
-        btn.textContent = `Remplacer « ${callsign} » (déconnecté)`;
-        btn.hidden = false;
-        return;
-      }
-      return showError(ERROR_FR[res.error]);
+    res = await joinRoom(code, callsign, replace);
+  } catch {
+    showError('Serveur injoignable. Vérifiez la connexion.');
+    return;
+  } finally {
+    setBusy(false);
+  }
+
+  if (!res.ok) {
+    // Salle disparue (GC serveur) : on purge l'entrée d'historique périmée.
+    if (res.error === 'ROOM_NOT_FOUND') {
+      removeRoomFromHistory(code);
+      renderHistory();
     }
-    saveSession({
+    // Indicatif tenu par un membre déconnecté : on propose de le remplacer.
+    if (res.error === 'CALLSIGN_TAKEN_DISCONNECTED') {
+      showError(ERROR_FR[res.error]);
+      const btn = $('btn-replace');
+      btn.textContent = `Remplacer « ${callsign} » (déconnecté)`;
+      btn.hidden = false;
+      return;
+    }
+    return showError(ERROR_FR[res.error]);
+  }
+
+  enterRoom(
+    {
       roomCode: res.roomCode,
       memberId: res.memberId,
       sessionToken: res.sessionToken,
       callsign,
       role: FIXED_ROLE,
       isLeader: false,
-    });
-    saveCallsign(callsign);
-    closeRoomMenu();
-    enterRoomUi();
-  } catch {
-    showError('Serveur injoignable. Vérifiez la connexion.');
-  } finally {
-    setBusy(false);
+    },
+    callsign,
+  );
+}
+
+/**
+ * Entrée effective en salle, commune à la création et au join.
+ *
+ * Hors de tout try : une exception d'interface doit remonter telle quelle,
+ * pas se déguiser en panne réseau.
+ */
+function enterRoom(session: Session, callsign: string): void {
+  const persisted = saveSession(session);
+  saveCallsign(callsign);
+  closeRoomMenu();
+  enterRoomUi();
+  if (!persisted) {
+    // La session vit en mémoire : on entre bien dans la salle, mais elle ne
+    // survivra pas à un rechargement. L'utilisateur doit le savoir avant de
+    // partir sur le terrain, sans que ça l'empêche d'entrer.
+    toast('Stockage indisponible : la salle sera perdue au rechargement.');
   }
 }
 

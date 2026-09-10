@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { OrderMessage } from '@tq/shared/protocol';
 import {
   DISCONNECT_GRACE_MS,
+  MAX_RECENT_ORDERS,
   ORDER_MAX_PER_WINDOW,
   ORDER_WINDOW_MS,
   ROOM_CODE_ALPHABET,
@@ -301,5 +303,68 @@ describe('acceptOrder (throttle anti-flood)', () => {
     delete (member as { orderWindowStart?: number }).orderWindowStart;
     delete (member as { ordersInWindow?: number }).ordersInWindow;
     expect(manager.acceptOrder(member, T0)).toBe(true);
+  });
+});
+
+describe('pushOrder — l’éviction épargne les figurés (A1)', () => {
+  const order = (id: string, kind: 'waypoint' | 'text' | 'ack'): OrderMessage => ({
+    id,
+    authorId: 'a1',
+    ts: T0,
+    kind,
+    payload:
+      kind === 'waypoint' ? { kind: 'waypoint', name: id, lat: 45, lng: 5 }
+      : kind === 'text' ? { kind: 'text', body: id }
+      : { kind: 'ack', orderId: 'w0' },
+  });
+
+  function filledRoom(manager: RoomManager) {
+    const { room } = createdRoom(manager);
+    return room;
+  }
+
+  it('garde l’historique borné', () => {
+    const manager = new RoomManager();
+    const room = filledRoom(manager);
+    for (let i = 0; i < MAX_RECENT_ORDERS + 50; i++) {
+      manager.pushOrder(room, order(`t${i}`, 'text'));
+    }
+    expect(room.recentOrders).toHaveLength(MAX_RECENT_ORDERS);
+  });
+
+  it('évince un message de chat plutôt qu’un figuré', () => {
+    // Une éviction purement chronologique jetait des tracés au profit de
+    // bavardages : un client qui se reconnecte ne les recevait alors jamais.
+    const manager = new RoomManager();
+    const room = filledRoom(manager);
+    manager.pushOrder(room, order('figure', 'waypoint'));
+    for (let i = 0; i < MAX_RECENT_ORDERS; i++) {
+      manager.pushOrder(room, order(`t${i}`, 'text'));
+    }
+    expect(room.recentOrders).toHaveLength(MAX_RECENT_ORDERS);
+    expect(room.recentOrders.some((o) => o.id === 'figure')).toBe(true);
+  });
+
+  it('évince aussi les accusés de réception en priorité', () => {
+    const manager = new RoomManager();
+    const room = filledRoom(manager);
+    manager.pushOrder(room, order('figure', 'waypoint'));
+    for (let i = 0; i < MAX_RECENT_ORDERS; i++) {
+      manager.pushOrder(room, order(`k${i}`, 'ack'));
+    }
+    expect(room.recentOrders.some((o) => o.id === 'figure')).toBe(true);
+  });
+
+  it('retombe sur le plus ancien quand tout est durable', () => {
+    // Aucun ordre transitoire à sacrifier : le comportement chronologique
+    // d'origine reprend, et l'historique reste borné.
+    const manager = new RoomManager();
+    const room = filledRoom(manager);
+    for (let i = 0; i < MAX_RECENT_ORDERS + 5; i++) {
+      manager.pushOrder(room, order(`w${i}`, 'waypoint'));
+    }
+    expect(room.recentOrders).toHaveLength(MAX_RECENT_ORDERS);
+    expect(room.recentOrders.some((o) => o.id === 'w0')).toBe(false);
+    expect(room.recentOrders.some((o) => o.id === `w${MAX_RECENT_ORDERS + 4}`)).toBe(true);
   });
 });

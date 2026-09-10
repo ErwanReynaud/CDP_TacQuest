@@ -214,9 +214,23 @@ export class RoomManager {
     return true;
   }
 
+  /**
+   * Ajoute un ordre à l'historique de la salle, borné à MAX_RECENT_ORDERS.
+   *
+   * L'éviction cible d'abord les ordres **transitoires** — messages de chat et
+   * accusés de réception. Ce sont eux qui font le volume sur une longue
+   * session, et une éviction purement chronologique finissait par jeter des
+   * figurés au profit de bavardages : un client qui se reconnecte, ou qui
+   * arrive en cours de mission, ne recevait alors jamais des tracés que tous
+   * les autres voyaient.
+   */
   pushOrder(room: Room, order: OrderMessage): void {
     room.recentOrders.push(order);
-    if (room.recentOrders.length > MAX_RECENT_ORDERS) room.recentOrders.shift();
+    if (room.recentOrders.length <= MAX_RECENT_ORDERS) return;
+    const transient = room.recentOrders.findIndex(
+      (o) => o.payload.kind === 'text' || o.payload.kind === 'ack',
+    );
+    room.recentOrders.splice(transient >= 0 ? transient : 0, 1);
   }
 
   /** GC périodique : grâce des membres, rooms sans connexion depuis 24 h.
