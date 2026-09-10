@@ -60,6 +60,14 @@ export function formatMeshStats(stats: MeshStats | null): string {
   lines.push(`${pad('  digests')}${k.digest}`);
   lines.push(`${pad('  demandes')}${k.req}`);
 
+  const a = stats.airtime;
+  lines.push('');
+  lines.push(`${pad('Airtime')}${(a.load * 100).toFixed(0)} % du budget horaire`);
+  lines.push(`${pad('  consommé')}${(a.usedMs / 1000).toFixed(1)} s`);
+  lines.push(`${pad('  disponible')}${(a.remainingMs / 1000).toFixed(1)} s`);
+  lines.push(`${pad('  en attente')}${a.queued}`);
+  if (a.dropped > 0) lines.push(`${pad('  abandonnées')}${a.dropped}`);
+
   lines.push('');
   lines.push(`${pad('Auteurs connus')}${stats.sync.authors}`);
   lines.push(`${pad('Trous')}${stats.sync.gaps}`);
@@ -89,6 +97,10 @@ function diagnosis(s: MeshStats): string {
     return '→ Des trames arrivent mais aucune n’est décodable : vérifiez que tous les postes ont la même version de TacQuest.';
   }
   if (!s.anchor) return '→ En attente d’un premier point GPS pour établir l’ancre de zone.';
+  if (s.airtime.load > 0.9) {
+    // Le duty cycle est légal, pas indicatif : le module refusera d'émettre.
+    return '→ Budget radio presque épuisé : les envois sont mis en file et les positions espacées.';
+  }
   if (s.sync.gaps > 0 || s.sync.requests > 0) {
     return `→ Rattrapage en cours : ${s.sync.gaps} trou(s) à combler.`;
   }

@@ -406,19 +406,79 @@ tombstones et non par un nombre d'entrées.
 
 ## 7. Gouverneur d'airtime
 
-Les garde-fous du mode serveur n'ont aucun sens sur radio :
+Ce que la réglementation borne n'est pas le volume mais le **temps d'occupation
+du canal** : 1 % en EU868, soit **36 secondes d'émission par heure glissante et
+par appareil**. Compter en octets, comme le faisait la première version de ce
+document, masquait complètement cette limite.
 
-- `ORDER_MAX_PER_WINDOW = 50` par 10 s, soit 5 messages/s, est **physiquement
-  impossible** à 1 % de duty cycle EU868.
-- `POSITION_INTERVAL_MS = 30 s` × 40 nœuds sature le canal à lui seul :
-  `MESH_POSITION_INTERVAL_MS` porte l'intervalle à 120 s, et le gouverneur peut
-  l'allonger davantage.
-- Il n'y a pas de serveur pour appliquer `POSITION_MIN_INTERVAL_MS` ni renvoyer
-  `RATE_LIMITED` : la limitation devient une discipline **locale**, appliquée
-  avant émission, avec file d'attente et priorités (alerte ENI > ordre >
-  position > digest).
+### Ce que coûte réellement une trame
 
----
+Formule de Semtech (AN1200.13), implémentée et testée dans
+`shared/src/mesh/airtime.ts`. Préréglage LongFast (SF11, 250 kHz, 4/5,
+16 symboles de préambule), en-tête MeshPacket de 16 octets compris :
+
+| Message | Trame | Temps d'antenne | Trames/heure |
+|---|---|---|---|
+| `clear` | 23 o | 436 ms | 82 |
+| `remove` | 24 o | 436 ms | 82 |
+| plot ENI | 31 o | 477 ms | 75 |
+| figuré de mission | 41 o | 559 ms | 64 |
+| position | 44 o | 559 ms | 64 |
+| **trame pleine** | 216 o | **1 870 ms** | **19** |
+
+Deux conséquences, contre-intuitives et structurantes :
+
+- **le préambule domine.** 16 symboles à 8,192 ms font 166 ms avant même le
+  premier octet utile. Une trame de 23 octets ne coûte que quatre fois moins
+  qu'une de 216. Grouper vaut donc toujours mieux que multiplier les petits
+  envois ;
+- **un poste ne peut émettre qu'environ 75 trames par heure.** Le gain obtenu
+  sur la taille des messages (§ 4.10) reste précieux, mais il ne suffit pas :
+  c'est le **nombre** de trames qu'il faut maîtriser.
+
+### La position est le poste dominant
+
+| Cadence | Temps/heure | Part du budget |
+|---|---|---|
+| 30 s (`POSITION_INTERVAL_MS`, mode serveur) | 67 s | **186 %** — illégal |
+| 120 s (`MESH_POSITION_INTERVAL_MS`) | 17 s | 47 % |
+
+La cadence du mode serveur dépasserait à elle seule le duty cycle autorisé. À
+120 s, les positions consomment encore près de la moitié du budget, ce qui ne
+laisse qu'une quarantaine de trames par heure pour tout le reste.
+
+### L'arbitrage
+
+Plutôt qu'une constante qui devine, `client/src/transport/airtimeGovernor.ts`
+place une file par priorité devant la radio :
+
+| Priorité | Contenu | Fusion |
+|---|---|---|
+| 1 | `ANCHOR` | oui — sans elle, aucun pair ne décode quoi que ce soit |
+| 2 | ordres et relais | non — chaque ordre est un contenu distinct |
+| 3 | positions | oui — une position périmée n'a aucune valeur |
+| 4 | `DIGEST`, `REQ` | oui — simple filet de sécurité |
+
+- **Canal libre : aucune latence.** Tant que le budget le permet, la trame part
+  immédiatement ; la file ne se forme que sous contrainte.
+- **La fusion** remplace une entrée en attente par sa version plus récente.
+  Émettre une position périmée gaspillerait de l'airtime pour afficher un
+  équipier là où il n'est plus.
+- **File pleine** : la trame la moins prioritaire est sacrifiée, à condition
+  qu'elle le soit strictement moins que la nouvelle — une avalanche de digests
+  ne doit pas chasser des ordres.
+- **Cadence de position adaptative** : au-delà de 50 % de charge l'intervalle
+  double, au-delà de 75 % il quadruple. La place est rendue aux ordres quand la
+  manœuvre s'intensifie, et au suivi quand elle retombe.
+
+Les garde-fous du mode serveur n'ont, eux, aucun sens ici :
+`ORDER_MAX_PER_WINDOW` autorise 5 messages par seconde, et il n'existe aucun
+serveur pour renvoyer `RATE_LIMITED`.
+
+> **À confirmer sur le matériel.** Les paramètres des préréglages
+> (`MESH_PRESETS`) viennent de la documentation, pas d'une lecture du module.
+> Une surestimation freine plus que nécessaire, ce qui est le sens sûr de
+> l'erreur ; une lecture réelle via `ADMIN_APP` les remplacerait avantageusement.
 
 ## 8. Ce qui n'est délibérément PAS géré en mode LoRa
 

@@ -6,7 +6,8 @@
   "exports": {
     "./protocol": "./src/protocol.ts",
     "./constants": "./src/constants.ts",
-    "./mesh/*": "./src/mesh/*.ts"
+    "./mesh/*": "./src/mesh/*.ts",
+    "./roomCode": "./src/roomCode.ts"
   },
   "scripts": {
     "test": "vitest run",

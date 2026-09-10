@@ -19,9 +19,10 @@ import {
   nodeToMemberId,
   RELAY_INNER_BUDGET,
 } from '@tq/shared/mesh/codec';
-import { OP } from '@tq/shared/mesh/constants';
+import { OP, POSITION_FRAME_BYTES } from '@tq/shared/mesh/constants';
 import { type Anchor, canonicalAnchor } from '@tq/shared/mesh/geo';
 import { parseOrderId } from '@tq/shared/mesh/ids';
+import { AirtimeGovernor, type Priority } from './airtimeGovernor';
 import { AntiEntropy } from '../crdt/antiEntropy';
 import { mergeOrder, type OrderStore } from '../crdt/orders';
 import { PositionRegister } from '../crdt/positions';
@@ -54,6 +55,8 @@ export interface MeshTransportOptions {
    * et temps simulé rendrait tout son comportement intestable.
    */
   now?: () => number;
+  /** Injectable pour les tests ; par défaut un gouverneur EU868 / LongFast. */
+  governor?: AirtimeGovernor;
 }
 
 /** Nature d'une trame émise ou reçue, pour la comptabilité de diagnostic. */
@@ -67,6 +70,7 @@ export interface MeshStats {
   rx: { frames: number; bytes: number; orders: number; positions: number; errors: number };
   tx: { frames: number; bytes: number; byKind: Record<FrameKind, number> };
   sync: { authors: number; scheduled: number; gaps: number; requests: number };
+  airtime: { queued: number; dropped: number; load: number; usedMs: number; remainingMs: number };
   /** Dernière trame illisible, avec sa cause. */
   lastError: string | null;
 }
@@ -84,6 +88,7 @@ export class MeshTransport {
   private room: MeshRoom | null;
   private lastPositionSent = 0;
   private readonly antiEntropy: AntiEntropy;
+  private readonly governor: AirtimeGovernor;
   // Comptabilité de diagnostic. Sur le terrain, c'est la seule façon de
   // distinguer « hors de portée » de « trame rejetée » de « bug applicatif ».
   private readonly rx = { frames: 0, bytes: 0, orders: 0, positions: 0, errors: 0 };
@@ -103,6 +108,9 @@ export class MeshTransport {
     this.members = opts.members ?? state.members;
     this.emit = opts.emit ?? ((e, d) => bus.emit(e, d));
     this.now = opts.now ?? (() => Date.now());
+    // Rien ne part sans passer par lui : compter en octets masquait la vraie
+    // limite, qui est le temps d'occupation du canal.
+    this.governor = opts.governor ?? new AirtimeGovernor({ log: (m) => this.log(m) });
     // L'anti-entropie décide quoi réémettre et quand ; c'est ici qu'on lui
     // fournit de quoi le faire partir sur la radio.
     this.antiEntropy = new AntiEntropy({
@@ -269,7 +277,7 @@ export class MeshTransport {
       if (droppedPoints > 0) {
         this.log(`[mesh] tracé simplifié : ${droppedPoints} sommet(s) retiré(s)`);
       }
-      await this.transmit(relayed ? encodeRelay(parsed.node, bytes) : bytes, relayed ? 'relay' : 'order');
+      this.transmit(relayed ? encodeRelay(parsed.node, bytes) : bytes, relayed ? 'relay' : 'order');
       this.antiEntropy.observe(order, this.now());
       return true;
     } catch (err) {
@@ -287,11 +295,26 @@ export class MeshTransport {
    */
   sendPosition(p: Position, now = this.now()): boolean {
     this.ensureAnchor(p.lat, p.lng);
-    if (now - this.lastPositionSent < MESH_POSITION_INTERVAL_MS) return false;
+    // Cadence adaptative : à 120 s les positions consomment déjà près de la
+    // moitié du budget horaire. Plutôt qu'une constante qui devine, on les
+    // espace quand la manœuvre s'intensifie, et on rend la place au suivi
+    // quand elle retombe.
+    const interval = this.governor.recommendedPositionIntervalMs(MESH_POSITION_INTERVAL_MS, now);
+    if (now - this.lastPositionSent < interval) return false;
     this.lastPositionSent = now;
-    this.tx.frames++;
-    this.txByKind.position++;
-    void this.radio.sendPosition(p);
+    this.governor.submit(
+      {
+        bytes: new Uint8Array(POSITION_FRAME_BYTES),
+        priority: 'position',
+        coalesceKey: 'position',
+        send: () => {
+          this.tx.frames++;
+          this.txByKind.position++;
+          return this.radio.sendPosition(p);
+        },
+      },
+      now,
+    );
     return true;
   }
 
@@ -308,15 +331,48 @@ export class MeshTransport {
    * comportement temporel reste testable sans horloge réelle.
    */
   tick(now = this.now()): void {
+    // Vider la file d'abord : ce qui attend depuis le tour précédent est
+    // prioritaire sur ce que l'anti-entropie va décider maintenant.
+    this.governor.drain(now);
     this.antiEntropy.tick(now);
   }
 
-  /** Point de passage unique des émissions : rien ne part sans être compté. */
-  private transmit(bytes: Uint8Array, kind: FrameKind): Promise<void> {
-    this.tx.frames++;
-    this.tx.bytes += bytes.length;
-    this.txByKind[kind]++;
-    return this.radio.sendPrivate(bytes);
+  /**
+   * Point de passage unique des émissions : rien ne part sans être compté ni
+   * soumis au gouverneur d'airtime.
+   *
+   * Les priorités traduisent une doctrine. L'ancre passe en tête : sans elle,
+   * aucun pair ne peut décoder quoi que ce soit de ce qu'on émet. Viennent
+   * ensuite les ordres et leurs relais, puis les positions — remplacées au
+   * relevé suivant, donc fusionnées entre elles — et enfin les digests, qui ne
+   * sont qu'un filet de sécurité.
+   */
+  private transmit(bytes: Uint8Array, kind: FrameKind): void {
+    const priority: Priority =
+      kind === 'anchor' ? 'alert'
+      : kind === 'digest' || kind === 'req' ? 'digest'
+      : kind === 'position' ? 'position'
+      : 'order';
+    // Une seule ancre, un seul digest et une seule position en attente : les
+    // versions périmées n'apportent rien et coûteraient de l'airtime.
+    const coalesceKey =
+      kind === 'order' || kind === 'relay' ? undefined : kind === 'req' ? undefined : kind;
+
+    const accepted = this.governor.submit(
+      {
+        bytes,
+        priority,
+        coalesceKey,
+        send: () => {
+          this.tx.frames++;
+          this.tx.bytes += bytes.length;
+          this.txByKind[kind]++;
+          return this.radio.sendPrivate(bytes);
+        },
+      },
+      this.now(),
+    );
+    if (!accepted) this.log(`[mesh] trame ${kind} abandonnée : file d’émission saturée`);
   }
 
   /** Instantané complet du lien, pour le panneau de diagnostic. */
@@ -328,6 +384,10 @@ export class MeshTransport {
       rx: { ...this.rx },
       tx: { frames: this.tx.frames, bytes: this.tx.bytes, byKind: { ...this.txByKind } },
       sync: this.antiEntropy.stats(),
+      airtime: (() => {
+        const g = this.governor.stats(this.now());
+        return { queued: g.queued, dropped: g.dropped, load: g.load, usedMs: g.usedMs, remainingMs: g.remainingMs };
+      })(),
       lastError: this.lastError,
     };
   }

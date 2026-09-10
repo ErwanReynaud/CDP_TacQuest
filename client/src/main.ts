@@ -1,6 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import './styles/app.css';
-import { loadSession } from './state';
+import { loadSession, state } from './state';
+import { flushMeshSave } from './transport/meshStore';
 import { initRoomMenu } from './views/roomMenu';
 import { enterMap, initMapView, toast } from './views/mapView';
 import { shouldShowInstallGate, showInstallGate } from './views/installGate';
@@ -20,6 +21,14 @@ function startApp(): void {
   loadSession();
   enterMap();
 }
+
+// Une PWA mise en arrière-plan peut être tuée sans autre préavis : on écrit
+// alors sans attendre l'échéance différée. `visibilitychange` est le seul
+// événement fiable pour cela sur mobile — `beforeunload` n'est pas déclenché
+// quand l'OS ferme l'application.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushMeshSave(state.orders);
+});
 
 registerServiceWorker();
 

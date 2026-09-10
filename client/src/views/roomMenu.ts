@@ -1,4 +1,5 @@
-import { CALLSIGN_REGEX, ROOM_CODE_LENGTH } from '@tq/shared/constants';
+import { CALLSIGN_REGEX } from '@tq/shared/constants';
+import { checkRoomCode, roomCodeErrorFr } from '@tq/shared/roomCode';
 import type { ErrorCode } from '@tq/shared/protocol';
 import type { Session } from '../state';
 import {
@@ -65,8 +66,12 @@ function hideReplace(): void {
 }
 
 function setBusy(busy: boolean): void {
-  $('btn-room-create').toggleAttribute('disabled', busy);
-  $('btn-room-join').toggleAttribute('disabled', busy);
+  // #btn-replace inclus : sans lui, un double appui lançait deux join
+  // concurrents, dont le second reprenait l'indicatif que le premier venait
+  // d'obtenir.
+  for (const id of ['btn-room-create', 'btn-room-join', 'btn-replace']) {
+    $(id).toggleAttribute('disabled', busy);
+  }
 }
 
 function readCallsign(): string | null {
@@ -136,9 +141,13 @@ export function initRoomMenu(): void {
 async function attemptJoin(replace = false): Promise<void> {
   const callsign = readCallsign();
   if (!callsign) return;
-  const code = $<HTMLInputElement>('room-code').value.trim().toUpperCase();
-  if (code.length !== ROOM_CODE_LENGTH)
-    return showError(`Le code de salle fait ${ROOM_CODE_LENGTH} caractères.`);
+  // Valide longueur ET alphabet : l'alphabet exclut 0, O, 1, I et L parce que
+  // le code se lit à la voix. Sans ça, un « oh » mal entendu partait au serveur
+  // et revenait en ROOM_NOT_FOUND, envoyant chercher une salle disparue au lieu
+  // d'une faute de frappe.
+  const checked = checkRoomCode($<HTMLInputElement>('room-code').value);
+  if (!checked.ok) return showError(roomCodeErrorFr(checked.error));
+  const code = checked.code;
   setBusy(true);
   showError(null);
   hideReplace();

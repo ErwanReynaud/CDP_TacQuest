@@ -1175,13 +1175,24 @@ export function initMapView(): void {
     if (!code) return;
     const text = `Rejoignez ma salle TacticalQuest : ${code} — ${location.origin}`;
     try {
-      if (navigator.share) await navigator.share({ text });
-      else {
+      if (navigator.share) {
+        await navigator.share({ text });
+        return;
+      }
+      // navigator.clipboard n'existe qu'en contexte sécurisé : sur un serveur
+      // de campagne servi en HTTP, l'appel levait et le catch avalait tout —
+      // le tap ne faisait rien, sans le moindre retour. On affiche alors le
+      // code, qui reste lisible à la voix.
+      if (navigator.clipboard) {
         await navigator.clipboard.writeText(code);
         toast('Code copié.');
+      } else {
+        toast(`Code de salle : ${code}`);
       }
     } catch {
-      /* partage annulé */
+      // Partage annulé par l'utilisateur, ou copie refusée : dans le doute, on
+      // montre le code plutôt que de rester muet.
+      toast(`Code de salle : ${code}`);
     }
   });
 

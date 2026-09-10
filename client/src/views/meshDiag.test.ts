@@ -20,6 +20,7 @@ function stats(over: Partial<MeshStats> = {}): MeshStats {
       byKind: { order: 3, relay: 1, digest: 2, req: 0, anchor: 1, position: 1, control: 0 },
     },
     sync: { authors: 3, scheduled: 0, gaps: 0, requests: 0 },
+    airtime: { queued: 0, dropped: 0, load: 0.2, usedMs: 7_200, remainingMs: 28_800 },
     lastError: null,
     ...over,
   };
@@ -71,6 +72,16 @@ describe('le diagnostic oriente vers la bonne cause', () => {
   it('signale un rattrapage en cours avec le nombre de trous', () => {
     const out = formatMeshStats(stats({ sync: { authors: 3, scheduled: 2, gaps: 4, requests: 1 } }));
     expect(out).toMatch(/Rattrapage en cours : 4 trou/);
+  });
+
+  it('alerte quand le budget radio est presque épuisé', () => {
+    // Le duty cycle est légal, pas indicatif : passé le seuil, le module
+    // refuse d'émettre. Mieux vaut que l'opérateur le sache.
+    const out = formatMeshStats(
+      stats({ airtime: { queued: 5, dropped: 1, load: 0.95, usedMs: 34_200, remainingMs: 1_800 } }),
+    );
+    expect(out).toMatch(/Budget radio presque épuisé/);
+    expect(out).toMatch(/95 %/);
   });
 
   it('reporte la dernière trame rejetée avec sa cause', () => {

@@ -161,5 +161,16 @@ export const RESEND_MAX_PER_DIGEST = 8;
  */
 export const MESH_POSITION_INTERVAL_MS = 120_000;
 
+/**
+ * Taille estimée d'une trame POSITION_APP encodée.
+ *
+ * Estimation et non mesure : le gouverneur d'airtime tourne dans la couche
+ * transport, qui ne doit pas importer le codec protobuf — celui-ci vit dans le
+ * morceau chargé à la demande avec la pile Meshtastic. Une Position complète
+ * (lat, lng, heure, précision, cap, vitesse) pèse une trentaine d'octets ;
+ * surestimer freine un peu plus que nécessaire, ce qui est le sens sûr.
+ */
+export const POSITION_FRAME_BYTES = 32;
+
 /** Duty cycle légal EU868, utilisé par le gouverneur d'airtime. */
 export const DUTY_CYCLE_EU868 = 0.01;

@@ -21,11 +21,13 @@ import { mergeOrder } from '../crdt/orders';
 import type { Radio } from '../mesh/radio';
 import { bus, state } from '../state';
 import { MeshTransport } from './meshTransport';
+import { flushMeshSave, loadMeshOrders, scheduleMeshSave } from './meshStore';
 import { adoptRadioNode, localNode } from './orderIds';
 import * as server from '../socket';
 
 let mesh: MeshTransport | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
+let unwatchOrders: (() => void) | null = null;
 
 /**
  * Cadence du battement d'anti-entropie.
@@ -45,7 +47,22 @@ export function attachMeshRadio(radio: Radio, log?: (m: string) => void): MeshTr
   detachMesh();
   if (radio.nodeNum !== null) adoptRadioNode(radio.nodeNum);
   radio.on('myNode', (nodeNum) => adoptRadioNode(nodeNum));
+
+  // Récupère ce que le poste avait reçu avant d'être tué par l'OS. Sans cela,
+  // il faudrait attendre que l'anti-entropie réémette toute la carte, sur un
+  // lien à 200 octets.
+  let restored = 0;
+  for (const o of loadMeshOrders()) {
+    if (mergeOrder(state.orders, o)) restored++;
+  }
+  if (restored > 0) {
+    log?.(`[mesh] ${restored} ordre(s) relus depuis le stockage local`);
+    bus.emit('orders');
+  }
+
   mesh = new MeshTransport({ radio, log });
+  // Tout changement d'ordres est persisté tant qu'une radio est rattachée.
+  unwatchOrders = bus.on('orders', () => scheduleMeshSave(state.orders));
   heartbeat = setInterval(() => mesh?.tick(), HEARTBEAT_MS);
   return mesh;
 }
@@ -54,6 +71,13 @@ export function detachMesh(): void {
   if (heartbeat) {
     clearInterval(heartbeat);
     heartbeat = null;
+  }
+  if (unwatchOrders) {
+    // Écriture immédiate de ce qui restait en attente : on se déconnecte
+    // peut-être juste avant que l'OS ne ferme la page.
+    flushMeshSave(state.orders);
+    unwatchOrders();
+    unwatchOrders = null;
   }
   mesh?.stop();
   mesh = null;

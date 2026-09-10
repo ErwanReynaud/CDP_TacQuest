@@ -40,7 +40,8 @@ client/src/
   mesh/                radio : plateforme, BLE, position, mesh simulé
   crdt/                LWW-Register positions, OR-Set add-wins ordres,
                        vecteur de versions et anti-entropie
-  transport/           façade serveur + mesh, attribution des identifiants
+  transport/           façade serveur + mesh, identifiants, persistance,
+                       gouverneur d'airtime
   map/, views/         carte et interface (inchangées)
 server/src/            salles, ordres, administration
 ```
@@ -71,10 +72,6 @@ incompatible.
 
 ## Reste à faire
 
-- Persistance des ordres en mode mesh seul (sans session serveur, ils vivent
-  en mémoire).
-- Gouverneur d'airtime avec files par priorité (alerte > ordre > position >
-  digest).
 - Validation sur matériel : séquence dans [`docs/mesh/tests.md`](docs/mesh/tests.md).
 - Reliquat d'audit, mineur : le code de salle n'est pas validé contre
   `ROOM_CODE_ALPHABET` côté client, `navigator.clipboard` est appelé sans garde

@@ -14,7 +14,7 @@ npm run build -w client   # la construction de production casse sur des choses
 
 ## 1. Ce qui est couvert automatiquement
 
-239 tests, dont 159 pour la couche mesh.
+310 tests, dont 205 pour la couche mesh.
 
 | Fichier | Ce qu'il verrouille |
 |---|---|
@@ -29,6 +29,10 @@ npm run build -w client   # la construction de production casse sur des choses
 | `client/src/crdt/versionVector.test.ts` | intervalles fusionnés, distinction contigu / plus haut détenu, trous |
 | `client/src/crdt/antiEntropy.test.ts` | réémission ciblée, gigue, suppression, digests tournants, demandes |
 | `client/src/transport/meshTransport.test.ts` | bout-en-bout entre deux nœuds : encodage, diffusion, décodage, fusion, et rattrapage réel d'un ordre perdu |
+| `shared/test/airtime.test.ts` | temps d'antenne confronté à la référence Semtech, budget de duty cycle à fenêtre glissante |
+| `client/src/transport/airtimeGovernor.test.ts` | priorités, fusion des envois périmés, file saturée, cadence adaptative |
+| `client/src/transport/meshStore.test.ts` | persistance locale des ordres, données relues corrompues, écriture différée |
+| `client/src/state.test.ts` | correctifs d'audit : isolation du bus, session non persistée, fusion des snapshots |
 | `client/src/mesh/meshScenario.test.ts` | mission de 30 min à 8 postes : convergence de tous les nœuds et budget radio |
 
 ### Le mesh simulé
@@ -61,8 +65,13 @@ et une correction :
 | **Total** | 142 | **2 845** |
 
 Trame la plus grosse : **26 octets**. Toute la manœuvre d'une section tient donc
-en moins de 300 octets ; ce sont les positions qui dominent le volume, d'où la
-cadence portée à 120 s (`MESH_POSITION_INTERVAL_MS`).
+en moins de 300 octets.
+
+Mais le volume n'est pas la limite. En temps d'antenne (LongFast, EU868), ces
+142 trames réparties sur 8 postes représentent une trentaine d'émissions par
+poste, soit environ **la moitié du budget horaire de chacun** — les positions
+en consommant à elles seules 47 %. C'est cette contrainte, et non les octets,
+que le gouverneur d'airtime arbitre (`docs/mesh/protocol.md` § 7).
 
 ---
 
@@ -121,6 +130,8 @@ ensemble — séparés, ils ne veulent rien dire.
 | 10b | Répéter avec un **troisième** module, en éteignant l'auteur des ordres | le retardataire est servi par le tiers : c'est l'enveloppe `RELAY` qui le permet |
 | 11 | Couper le Bluetooth pendant une émission | l'état passe à déconnecté, l'application ne se fige pas |
 | 12 | Ouvrir le panneau de diagnostic à chaque étape | les compteurs bougent, et le diagnostic final dit « Lien nominal » |
+| 13 | Tracer une vingtaine de figurés d'affilée | la ligne « Airtime » monte ; au-delà de 90 %, les envois passent en file au lieu d'être perdus |
+| 14 | Tuer l'application depuis le gestionnaire de tâches, relancer, reconnecter | la carte est retrouvée telle quelle, sans attendre de réémission |
 
 ### Vérifications de plateforme
 
