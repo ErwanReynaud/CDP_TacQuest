@@ -1,8 +1,9 @@
 // Comms : chat libre de la salle. Chacun peut envoyer des messages texte ;
 // ils transitent comme des ordres `text` (transport optimiste + file hors-ligne).
 import { state } from '../state';
-import { sendOrder } from '../socket';
-import { uid, escapeHtml } from '../util';
+import { sendOrder } from '../transport';
+import { escapeHtml } from '../util';
+import { issueOrderId } from '../transport/orderIds';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -86,7 +87,7 @@ function markRead(orderId: string): void {
   if (!session) return;
   if (deriveAcks().get(orderId)?.has(session.memberId)) return;
   sendOrder({
-    id: uid(),
+    id: issueOrderId(),
     authorId: session.memberId,
     ts: Date.now(),
     kind: 'ack',
@@ -159,7 +160,7 @@ function sendChat(): void {
   const body = input.value.trim().slice(0, MAX_MESSAGE_LEN);
   if (!body) return;
   sendOrder({
-    id: uid(),
+    id: issueOrderId(),
     authorId: session.memberId,
     ts: Date.now(),
     kind: 'text',

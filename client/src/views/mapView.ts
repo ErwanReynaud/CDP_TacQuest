@@ -8,8 +8,9 @@ import type { GraphicStyle, LineEchelon, MemberPublic, Position } from '@tq/shar
 import { bus, loadLastRoom, state } from '../state';
 import { cycleCoordFormat, formatCoords, getCoordFormat, parseCoords, setCoordFormat, type CoordFormat } from '../coords';
 import { cachedElevation, coordsWithAltitudeHtml, elevationKey, fetchElevation, hydrateAltitudes } from '../elevation';
-import { connectForSession, leaveRoom, pendingOrderCount, restorePendingOrders, sendPosition } from '../socket';
+import { connectForSession, leaveRoom, pendingOrderCount, restorePendingOrders, sendPosition } from '../transport';
 import { offerSoloImport, orderAuthor, restoreSoloOrders, SOLO_AUTHOR, submitOrder } from '../soloOrders';
+import { issueOrderId } from '../transport/orderIds';
 import { startGeolocation, type GeoWatcher } from '../geo';
 import { dlog, formatLog, clearLog, onLog } from '../debugLog';
 import { searchPlaces, type PlaceResult } from '../geocode';
@@ -31,7 +32,7 @@ import {
   unreadCommsCount,
 } from './commsPanel';
 import { closeTac, initTacPanel } from './tacPanel';
-import { escapeHtml, formatDistance, uid } from '../util';
+import { escapeHtml, formatDistance } from '../util';
 import { openRoomMenu } from './roomMenu';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -540,7 +541,7 @@ function finishSketch(): void {
  *  ou appliqué à la carte solo persistée (voir submitOrder). */
 function sendGraphic(points: L.LatLng[], style: GraphicStyle): void {
   submitOrder({
-    id: uid(),
+    id: issueOrderId(),
     authorId: orderAuthor(),
     ts: Date.now(),
     kind: 'graphic',
@@ -644,7 +645,7 @@ function confirmPointMenu(): void {
   const name = $<HTMLInputElement>('point-name').value.trim() || 'Point';
   const c = pendingPoint;
   submitOrder({
-    id: editId ?? uid(), // même id en édition → écrase le plot
+    id: editId ?? issueOrderId(), // même id en édition → écrase le plot
     authorId: orderAuthor(),
     ts: Date.now(),
     kind: 'waypoint',
@@ -673,7 +674,7 @@ function clearWholeMap(): void {
   // figuré : sur LoRa, effacer une carte chargée coûtait 40 paquets, et en
   // mode serveur cela consommait d'un coup la moitié du quota anti-flood.
   submitOrder({
-    id: uid(),
+    id: issueOrderId(),
     authorId: orderAuthor(),
     ts: Date.now(),
     kind: 'clear',
@@ -684,7 +685,7 @@ function clearWholeMap(): void {
 
 function deleteOrder(orderId: string): void {
   submitOrder({
-    id: uid(),
+    id: issueOrderId(),
     authorId: orderAuthor(),
     ts: Date.now(),
     kind: 'remove',
@@ -712,7 +713,7 @@ function confirmEniMenu(): void {
   const name = $<HTMLInputElement>('eni-name').value.trim() || 'ENI';
   const c = pendingEni;
   submitOrder({
-    id: editId ?? uid(), // même id en édition → écrase le plot
+    id: editId ?? issueOrderId(), // même id en édition → écrase le plot
     authorId: orderAuthor(),
     ts: Date.now(),
     kind: 'waypoint',

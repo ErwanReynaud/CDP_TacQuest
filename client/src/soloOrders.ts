@@ -1,6 +1,6 @@
 import type { OrderMessage } from '@tq/shared/protocol';
 import { bus, state } from './state';
-import { sendOrder } from './socket';
+import { authorId, isShared, sendOrder } from './transport';
 
 // Figurés de la carte solo (hors salle) : appliqués localement et persistés en
 // localStorage — ils survivent à la fermeture de l'app et reviennent à chaque
@@ -34,7 +34,7 @@ function persist(): void {
 
 /** authorId à poser sur un nouvel ordre, selon qu'on est en salle ou non. */
 export function orderAuthor(): string {
-  return state.session?.memberId ?? SOLO_AUTHOR;
+  return authorId() ?? SOLO_AUTHOR;
 }
 
 /**
@@ -44,7 +44,9 @@ export function orderAuthor(): string {
  * stock ne grossit pas indéfiniment).
  */
 export function submitOrder(o: OrderMessage): void {
-  if (state.session) return sendOrder(o);
+  // « Partagé » et non « en salle » : un module Meshtastic appairé diffuse
+  // l'ordre même sans salle serveur.
+  if (isShared()) return sendOrder(o);
   if (o.payload.kind === 'remove') {
     state.orders.delete(o.payload.orderId);
   } else if (o.payload.kind === 'clear') {

@@ -8,7 +8,7 @@ import {
   saveCallsign,
   saveSession,
 } from '../state';
-import { createRoom, joinRoom, FIXED_ROLE } from '../socket';
+import { createRoom, joinRoom, FIXED_ROLE } from '../transport';
 import { enterRoomUi } from './mapView';
 
 // Les codes POST_TAKEN* ne peuvent plus arriver (tout le monde entre en 'GV',
