@@ -56,6 +56,21 @@ export interface MeshTransportOptions {
   now?: () => number;
 }
 
+/** Nature d'une trame émise ou reçue, pour la comptabilité de diagnostic. */
+type FrameKind = 'order' | 'relay' | 'digest' | 'req' | 'anchor' | 'position' | 'control';
+
+/** Instantané de l'état du lien, destiné au panneau de diagnostic. */
+export interface MeshStats {
+  status: string;
+  nodeNum: number | null;
+  anchor: Anchor | null;
+  rx: { frames: number; bytes: number; orders: number; positions: number; errors: number };
+  tx: { frames: number; bytes: number; byKind: Record<FrameKind, number> };
+  sync: { authors: number; scheduled: number; gaps: number; requests: number };
+  /** Dernière trame illisible, avec sa cause. */
+  lastError: string | null;
+}
+
 export class MeshTransport {
   readonly kind = 'mesh' as const;
   private readonly radio: Radio;
@@ -69,6 +84,14 @@ export class MeshTransport {
   private room: MeshRoom | null;
   private lastPositionSent = 0;
   private readonly antiEntropy: AntiEntropy;
+  // Comptabilité de diagnostic. Sur le terrain, c'est la seule façon de
+  // distinguer « hors de portée » de « trame rejetée » de « bug applicatif ».
+  private readonly rx = { frames: 0, bytes: 0, orders: 0, positions: 0, errors: 0 };
+  private readonly tx = { frames: 0, bytes: 0 };
+  private readonly txByKind: Record<FrameKind, number> = {
+    order: 0, relay: 0, digest: 0, req: 0, anchor: 0, position: 0, control: 0,
+  };
+  private lastError: string | null = null;
   /** Ordres qu'on n'a pas pu émettre faute d'ancre : rejoués dès qu'elle existe. */
   private readonly pending: OrderMessage[] = [];
 
@@ -84,8 +107,8 @@ export class MeshTransport {
     // fournit de quoi le faire partir sur la radio.
     this.antiEntropy = new AntiEntropy({
       orders: this.orders,
-      sendDigest: (entries) => void this.radio.sendPrivate(encodeDigest(entries)),
-      sendReq: (node, from, count) => void this.radio.sendPrivate(encodeReq(node, from, count)),
+      sendDigest: (entries) => this.transmit(encodeDigest(entries), 'digest'),
+      sendReq: (node, from, count) => this.transmit(encodeReq(node, from, count), 'req'),
       resendOrder: (o) => void this.sendOrder(o),
     });
     this.wire();
@@ -116,13 +139,17 @@ export class MeshTransport {
   }
 
   private onPrivate(payload: Uint8Array, from: number): void {
+    this.rx.frames++;
+    this.rx.bytes += payload.length;
     let frame;
     try {
       frame = decodeFrame(payload, this.ctx(from));
     } catch (err) {
       // Une trame illisible (version inconnue, corruption radio) ne doit pas
-      // interrompre la réception : on la journalise et on continue.
-      this.log(`[mesh] trame ignorée de ${from} : ${String(err)}`);
+      // interrompre la réception : on la compte, on la journalise, on continue.
+      this.rx.errors++;
+      this.lastError = `de ${from.toString(16)} : ${String(err)}`;
+      this.log(`[mesh] trame ignorée ${this.lastError}`);
       return;
     }
 
@@ -130,6 +157,7 @@ export class MeshTransport {
       this.onControl(frame.frame);
       return;
     }
+    this.rx.orders++;
     // Observer même un doublon : c'est ce qui fait taire notre propre
     // réémission quand un pair nous a devancés.
     this.antiEntropy.observe(frame.order, this.now());
@@ -162,6 +190,7 @@ export class MeshTransport {
   }
 
   private onPosition(from: number, position: Position): void {
+    this.rx.positions++;
     const memberId = nodeToMemberId(from);
     if (!this.positions.apply(memberId, position, from)) return;
     const member = this.members.get(memberId);
@@ -203,7 +232,7 @@ export class MeshTransport {
     if (this.room) return;
     this.room = { anchor: canonicalAnchor(lat, lng), epochSec: Math.floor(this.now() / 1000) };
     this.log('[mesh] ancre de zone établie');
-    void this.radio.sendPrivate(encodeAnchor(this.room.anchor, this.room.epochSec, true));
+    this.transmit(encodeAnchor(this.room.anchor, this.room.epochSec, true), 'anchor');
     this.flushPending();
   }
 
@@ -240,7 +269,7 @@ export class MeshTransport {
       if (droppedPoints > 0) {
         this.log(`[mesh] tracé simplifié : ${droppedPoints} sommet(s) retiré(s)`);
       }
-      await this.radio.sendPrivate(relayed ? encodeRelay(parsed.node, bytes) : bytes);
+      await this.transmit(relayed ? encodeRelay(parsed.node, bytes) : bytes, relayed ? 'relay' : 'order');
       this.antiEntropy.observe(order, this.now());
       return true;
     } catch (err) {
@@ -260,6 +289,8 @@ export class MeshTransport {
     this.ensureAnchor(p.lat, p.lng);
     if (now - this.lastPositionSent < MESH_POSITION_INTERVAL_MS) return false;
     this.lastPositionSent = now;
+    this.tx.frames++;
+    this.txByKind.position++;
     void this.radio.sendPosition(p);
     return true;
   }
@@ -280,9 +311,25 @@ export class MeshTransport {
     this.antiEntropy.tick(now);
   }
 
-  /** État de synchronisation, pour le panneau de diagnostic. */
-  syncStats(): { authors: number; scheduled: number; gaps: number; requests: number } {
-    return this.antiEntropy.stats();
+  /** Point de passage unique des émissions : rien ne part sans être compté. */
+  private transmit(bytes: Uint8Array, kind: FrameKind): Promise<void> {
+    this.tx.frames++;
+    this.tx.bytes += bytes.length;
+    this.txByKind[kind]++;
+    return this.radio.sendPrivate(bytes);
+  }
+
+  /** Instantané complet du lien, pour le panneau de diagnostic. */
+  stats(): MeshStats {
+    return {
+      status: this.radio.status,
+      nodeNum: this.radio.nodeNum,
+      anchor: this.room?.anchor ?? null,
+      rx: { ...this.rx },
+      tx: { frames: this.tx.frames, bytes: this.tx.bytes, byKind: { ...this.txByKind } },
+      sync: this.antiEntropy.stats(),
+      lastError: this.lastError,
+    };
   }
 
   stop(): void {

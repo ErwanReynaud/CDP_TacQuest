@@ -328,6 +328,19 @@ input[type='text']:focus { outline: 2px solid var(--accent); border-color: trans
   margin: 0 0 8px;
 }
 .mesh-status[hidden] { display: none; }
+
+/* Intertitres du panneau de diagnostic, qui couvre désormais la liaison radio
+   en plus du journal de veille. */
+.diag-section {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+  text-transform: uppercase;
+}
+.diag-section:first-of-type { margin-top: 0; }
+
 .mesh-status.mesh-ok { color: #5dbb63; }  /* même vert que .conn-connected */
 .mesh-status.mesh-ko { color: var(--warn); }
 .segmented { display: flex; gap: 0; }
@@ -1026,13 +1039,14 @@ input[type='text']:focus { outline: 2px solid var(--accent); border-color: trans
 .diag-card { max-width: 560px; width: 100%; }
 .diag-hint { font-size: 0.78rem; }
 .diag-hint code { background: var(--panel-2); padding: 0 4px; border-radius: 3px; }
-#diag-log {
+#diag-log,
+#diag-mesh {
   background: var(--panel-2);
   border-radius: 8px;
   font-size: 0.66rem;
   line-height: 1.35;
   margin: 0;
-  max-height: 50vh;
+  max-height: 40vh;
   overflow: auto;
   padding: 10px;
   white-space: pre-wrap;

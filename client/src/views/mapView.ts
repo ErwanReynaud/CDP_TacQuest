@@ -12,6 +12,7 @@ import { connectForSession, leaveRoom, pendingOrderCount, restorePendingOrders, 
 import { offerSoloImport, orderAuthor, restoreSoloOrders, SOLO_AUTHOR, submitOrder } from '../soloOrders';
 import { issueOrderId } from '../transport/orderIds';
 import { attachMeshRadio, detachMesh, meshTransport } from '../transport';
+import { formatMeshStats } from './meshDiag';
 import { BleUnavailableError, connectBleRadio, preloadBleRadio } from '../mesh/bleRadio';
 import { bleSupport } from '../mesh/platform';
 import { startGeolocation, type GeoWatcher } from '../geo';
@@ -1075,20 +1076,29 @@ export function initMapView(): void {
   // --- panneau de diagnostic veille (masqué — conservé pour un usage ultérieur) ---
   let diagUnsub: (() => void) | null = null;
   const renderDiag = (): void => {
+    $('diag-mesh').textContent = formatMeshStats(meshTransport()?.stats() ?? null);
     const pre = $('diag-log');
-    pre.textContent = formatLog() || '(journal vide — verrouille puis déverrouille)';
+    pre.textContent = formatLog() || '(journal vide)';
     pre.scrollTop = pre.scrollHeight;
   };
+  // Rafraîchit tant que le panneau est ouvert : les compteurs bougent sans
+  // qu'aucune ligne de journal ne soit écrite (digests, positions reçues).
+  let diagTimer: ReturnType<typeof setInterval> | null = null;
   $('btn-diag').addEventListener('click', () => {
     $('drawer').hidden = true;
     $('diag-overlay').hidden = false;
     renderDiag();
     diagUnsub = onLog(renderDiag); // mise à jour en direct tant que le panneau est ouvert
+    diagTimer ??= setInterval(renderDiag, 2_000);
   });
   const closeDiag = (): void => {
     $('diag-overlay').hidden = true;
     diagUnsub?.();
     diagUnsub = null;
+    if (diagTimer) {
+      clearInterval(diagTimer);
+      diagTimer = null;
+    }
   };
   $('diag-close').addEventListener('click', closeDiag);
   $('diag-clear').addEventListener('click', () => {
@@ -1096,7 +1106,8 @@ export function initMapView(): void {
     dlog('diag', 'journal vidé');
   });
   $('diag-copy').addEventListener('click', () => {
-    const txt = formatLog();
+    // On copie l'état radio avec le journal : séparés, ils ne veulent rien dire.
+    const txt = `${formatMeshStats(meshTransport()?.stats() ?? null)}\n\n--- journal ---\n${formatLog()}`;
     void navigator.clipboard?.writeText(txt).then(
       () => toast('Journal copié'),
       () => toast('Copie impossible — sélectionne le texte à la main'),

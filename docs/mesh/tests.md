@@ -14,7 +14,7 @@ npm run build -w client   # la construction de production casse sur des choses
 
 ## 1. Ce qui est couvert automatiquement
 
-224 tests, dont 147 pour la couche mesh.
+239 tests, dont 159 pour la couche mesh.
 
 | Fichier | Ce qu'il verrouille |
 |---|---|
@@ -86,6 +86,24 @@ Chrome/Edge).
    officielle **avant** de tester TacQuest. Cela sépare un problème de radio
    d'un problème d'application.
 
+### Lire le panneau de diagnostic
+
+Tiroir → **Diagnostic**. Le bloc « Liaison radio » se rafraîchit toutes les
+deux secondes et se termine par une phrase qui dit quoi faire :
+
+| Ce qu'affiche le panneau | Ce que ça veut dire |
+|---|---|
+| « Aucune trame reçue » | personne à portée, ou canal et clé différents |
+| « aucune n'est décodable » | la radio marche, les versions de TacQuest divergent |
+| « En attente d'un premier point GPS » | pas encore d'ancre de zone, rien ne peut être encodé |
+| « Rattrapage en cours : N trous » | l'anti-entropie travaille, laisser quelques minutes |
+| « Lien nominal, carte à jour » | rien à signaler |
+
+La distinction entre « rien n'arrive » et « ça arrive mais c'est illisible » est
+la plus utile des cinq : la première envoie vérifier la portée et la clé, la
+seconde les versions installées. **Copier** emporte l'état radio et le journal
+ensemble — séparés, ils ne veulent rien dire.
+
 ### Séquence de validation
 
 | # | Étape | Attendu |
@@ -102,6 +120,7 @@ Chrome/Edge).
 | 10 | Éteindre un module 5 min, composer des ordres, rallumer | **sans rien faire**, le module revenu rattrape son retard en quelques minutes (digest puis réémission) |
 | 10b | Répéter avec un **troisième** module, en éteignant l'auteur des ordres | le retardataire est servi par le tiers : c'est l'enveloppe `RELAY` qui le permet |
 | 11 | Couper le Bluetooth pendant une émission | l'état passe à déconnecté, l'application ne se fige pas |
+| 12 | Ouvrir le panneau de diagnostic à chaque étape | les compteurs bougent, et le diagnostic final dit « Lien nominal » |
 
 ### Vérifications de plateforme
 

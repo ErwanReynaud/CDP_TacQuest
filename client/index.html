@@ -329,18 +329,21 @@
         <button id="btn-mesh" class="btn">Connecter</button>
       </div>
       <p id="mesh-status" class="mesh-status" hidden></p>
-      <!-- Diagnostic veille masqué : conservé pour un usage ultérieur. -->
-      <div class="option-row" hidden>
-        <span>Diagnostic veille</span>
+      <div class="option-row">
+        <span>Diagnostic</span>
         <button id="btn-diag" class="topbar-btn">Ouvrir</button>
       </div>
     </aside>
 
     <div id="diag-overlay" class="overlay" hidden>
       <div class="overlay-card diag-card">
-        <h2>Diagnostic veille</h2>
-        <p class="diag-hint">Verrouille l'écran, attends 1–2 min, déverrouille,
-           rouvre ce panneau. Repère les trous (+Xs) et les lignes <code>gps</code>.</p>
+        <h2>Diagnostic</h2>
+        <h3 class="diag-section">Liaison radio</h3>
+        <pre id="diag-mesh"></pre>
+        <h3 class="diag-section">Journal</h3>
+        <p class="diag-hint">Pour la veille : verrouille l'écran, attends 1–2 min,
+           déverrouille, rouvre ce panneau. Repère les trous (+Xs) et les lignes
+           <code>gps</code>.</p>
         <pre id="diag-log"></pre>
         <div class="diag-actions">
           <button id="diag-copy" class="btn">Copier</button>
