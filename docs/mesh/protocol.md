@@ -51,7 +51,7 @@ L'identité d'un membre est le **numéro de nœud Meshtastic** (uint32). Le
 | Indicatif / rôle | `NODEINFO_APP` (4) | `User.long_name` = indicatif, `short_name` = forme abrégée |
 | Chat « Comms » | `TEXT_MESSAGE_APP` (1) | interopérable avec un client standard |
 | Figurés, plots, missions, CRDT | **`PRIVATE_APP` (256)** | aucun type natif ne porte SIDC, échelon, couleur ni catalogue de mission |
-| Alerte ENI (option) | `ALERT_APP` (71) | déclenche le buzzer du module en complément du plot |
+| Alerte ENI (option) | `ALERT_APP` (11) | déclenche le buzzer du module en complément du plot |
 | Rattrapage des retardataires | `STORE_FORWARD_APP` (65) | complète DIGEST/REQ (§ 6) |
 | Configuration du module | `ADMIN_APP` (6) | assistant de mise en service uniquement, hors protocole applicatif |
 | `ATAK_PLUGIN` (72) | **jamais émis** | référence de conception (payload propriétaire opaque sur portnum dédié), mais on n'usurpe pas le plugin d'un autre écosystème |
