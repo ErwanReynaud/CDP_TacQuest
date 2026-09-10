@@ -1,4 +1,5 @@
 import type { GraphicStyle, OrderMessage } from '@tq/shared/protocol';
+import { isHidden, suppression } from '../crdt/orders';
 
 export interface GraphicOrder {
   id: string;
@@ -19,23 +20,20 @@ export interface WaypointOrder {
   color?: string;
 }
 
-function removedIds(orders: Map<string, OrderMessage>): Set<string> {
-  const removed = new Set<string>();
-  for (const o of orders.values()) {
-    if (o.payload.kind === 'remove') removed.add(o.payload.orderId);
-  }
-  return removed;
-}
-
 /**
- * Graphiques effectivement visibles : les ordres `graphic` non visés par un
- * ordre `remove`. Pur (sans Leaflet) pour rester testable hors navigateur.
+ * Graphiques effectivement visibles : les ordres `graphic` que ni un `remove`
+ * ni un `clear` ne masquent. Pur (sans Leaflet) pour rester testable hors
+ * navigateur.
+ *
+ * La règle de masquage vit dans crdt/orders.ts : elle est add-wins (une mise à
+ * jour postérieure à une suppression fait réapparaître le figuré) et doit être
+ * identique sur tous les nœuds, sans quoi deux cartes divergent.
  */
 export function visibleGraphics(orders: Map<string, OrderMessage>): GraphicOrder[] {
-  const removed = removedIds(orders);
+  const hidden = suppression(orders);
   const out: GraphicOrder[] = [];
   for (const o of orders.values()) {
-    if (o.payload.kind !== 'graphic' || removed.has(o.id)) continue;
+    if (o.payload.kind !== 'graphic' || isHidden(o, hidden)) continue;
     const latlngs = lineStringLatLngs(o.payload.geojson);
     if (latlngs.length < 2) continue;
     out.push({ id: o.id, authorId: o.authorId, latlngs, style: o.payload.style ?? {} });
@@ -43,12 +41,12 @@ export function visibleGraphics(orders: Map<string, OrderMessage>): GraphicOrder
   return out;
 }
 
-/** Waypoints (plots) visibles : ordres `waypoint` moins les `remove`. */
+/** Plots visibles : ordres `waypoint` que ni un `remove` ni un `clear` ne masquent. */
 export function visibleWaypoints(orders: Map<string, OrderMessage>): WaypointOrder[] {
-  const removed = removedIds(orders);
+  const hidden = suppression(orders);
   const out: WaypointOrder[] = [];
   for (const o of orders.values()) {
-    if (o.payload.kind !== 'waypoint' || removed.has(o.id)) continue;
+    if (o.payload.kind !== 'waypoint' || isHidden(o, hidden)) continue;
     const { name, lat, lng, sidc, color } = o.payload;
     if (typeof lat !== 'number' || typeof lng !== 'number') continue;
     out.push({ id: o.id, authorId: o.authorId, name, lat, lng, sidc, color });

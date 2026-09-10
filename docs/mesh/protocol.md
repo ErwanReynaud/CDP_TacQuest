@@ -425,8 +425,9 @@ forme défensivement. Le schéma fermé dont le codec a besoin
 (`LineStringFeature`) vit donc dans `shared/src/mesh/codec.ts`, qui **valide** à
 l'entrée au lieu de transtyper.
 
-**Consommateurs à mettre à jour :** `map/orderFilter.ts` doit filtrer sur
-`clear`, et le rendu des Comms ne doit pas afficher un `clear` comme un message.
+`map/orderFilter.ts` délègue désormais le masquage à `crdt/orders.ts`, seul
+détenteur de la règle add-wins. Le panneau Comms filtre par liste blanche
+(`kind !== 'text'`), un `clear` y est donc ignoré sans modification.
 
 ### Alignement des dictionnaires
 

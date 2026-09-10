@@ -669,8 +669,16 @@ function clearWholeMap(): void {
   }
   const target = state.session ? 'de la salle (pour tout le monde)' : 'de la carte';
   if (!confirm(`Effacer les ${count} figuré(s) et tracé(s) ${target} ?`)) return;
-  for (const g of visibleGraphics(state.orders)) deleteOrder(g.id);
-  for (const w of visibleWaypoints(state.orders)) deleteOrder(w.id);
+  // Un seul ordre `clear` borné dans le temps, au lieu d'un `remove` par
+  // figuré : sur LoRa, effacer une carte chargée coûtait 40 paquets, et en
+  // mode serveur cela consommait d'un coup la moitié du quota anti-flood.
+  submitOrder({
+    id: uid(),
+    authorId: orderAuthor(),
+    ts: Date.now(),
+    kind: 'clear',
+    payload: { kind: 'clear', beforeTs: Date.now() },
+  });
   $('drawer').hidden = true;
 }
 

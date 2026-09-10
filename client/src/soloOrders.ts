@@ -45,8 +45,18 @@ export function orderAuthor(): string {
  */
 export function submitOrder(o: OrderMessage): void {
   if (state.session) return sendOrder(o);
-  if (o.payload.kind === 'remove') state.orders.delete(o.payload.orderId);
-  else state.orders.set(o.id, o);
+  if (o.payload.kind === 'remove') {
+    state.orders.delete(o.payload.orderId);
+  } else if (o.payload.kind === 'clear') {
+    // En solo il n'y a personne avec qui converger : on supprime réellement au
+    // lieu de conserver un tombstone, et le stock ne grossit pas.
+    const before = o.payload.beforeTs;
+    for (const [id, existing] of state.orders) {
+      if (existing.ts <= before) state.orders.delete(id);
+    }
+  } else {
+    state.orders.set(o.id, o);
+  }
   persist();
   bus.emit('orders');
 }
