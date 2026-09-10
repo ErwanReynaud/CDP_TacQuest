@@ -15,12 +15,19 @@ sur les deux chemins, et la déduplication est assurée par le CRDT.
 ## Démarrage
 
 ```sh
-npm install
-npm run dev        # serveur + client
+npm ci
+npm run dev        # serveur + client, http://localhost:5173
 npm test           # les trois paquets
 npm run typecheck
-npm run build -w client
+npm run build      # produit client/dist
 ```
+
+> **Le mode radio exige du HTTPS.** Le Bluetooth Web n'existe qu'en contexte
+> sécurisé : servie en `http://` depuis une IP de réseau local, l'application
+> fonctionne (carte, GPS, mode serveur) mais aucun module ne peut être appairé.
+> `localhost` fait exception. Le `Caddyfile` couvre les deux cas de
+> déploiement, dont celui d'un portable de terrain sans internet — voir
+> [`docs/mesh/tests.md`](docs/mesh/tests.md) § 2.
 
 ## Documentation
 

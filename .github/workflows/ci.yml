@@ -1,0 +1,48 @@
+# Vérification à chaque poussée : typecheck, tests, construction de production.
+#
+# La construction fait partie du lot délibérément. Elle a déjà cassé sur des
+# choses que ni les tests ni le typecheck ne voient — @meshtastic/core importe
+# des modules Node que le navigateur n'a pas — et un client qui ne se construit
+# plus ne se déploie plus, donc ne se teste plus sur le terrain.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Construction du client
+        run: npm run build
+
+      - name: Vérifier le poids du paquet initial
+        # La pile Meshtastic est chargée à la demande : si elle retombait dans
+        # le paquet principal, tous les postes — y compris ceux qui n'appairent
+        # aucun module — la téléchargeraient au démarrage.
+        run: |
+          bundle=$(find client/dist/assets -name 'index-*.js' -printf '%s\n' | head -1)
+          echo "paquet initial : $((bundle / 1024)) ko"
+          if [ "$bundle" -gt 1400000 ]; then
+            echo "::error::le paquet initial dépasse 1400 ko — la pile radio y est-elle retombée ?"
+            exit 1
+          fi

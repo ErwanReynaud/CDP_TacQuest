@@ -75,7 +75,61 @@ que le gouverneur d'airtime arbitre (`docs/mesh/protocol.md` § 7).
 
 ---
 
-## 2. Ce qui exige du matériel
+## 2. Monter le banc d'essai
+
+### Le HTTPS n'est pas optionnel
+
+Le Bluetooth Web n'existe **que** en contexte sécurisé. Servi en `http://`
+depuis une adresse IP de réseau local, `navigator.bluetooth` est simplement
+absent, et l'application l'annonce correctement — « connexion sécurisée
+requise » — mais aucun module ne pourra être appairé. C'est le premier écueil
+d'une sortie terrain, et il n'a rien à voir avec la radio.
+
+Seule exception : `http://localhost` est considéré comme sécurisé. Un test sur
+le portable qui héberge le serveur fonctionne donc sans TLS ; sur un téléphone,
+non.
+
+### Sur le terrain, sans internet
+
+Le `Caddyfile` à la racine couvre exactement ce cas — décommenter le second
+bloc, commenter le premier :
+
+```sh
+npm ci
+npm run build          # produit client/dist
+npm start              # serveur Node sur :3000
+caddy run              # TLS devant, avec sa propre autorité
+```
+
+Caddy génère alors son propre certificat racine. Il faut l'installer **une
+fois** sur chaque téléphone, sans quoi le navigateur refusera la page :
+
+```
+~/.local/share/caddy/pki/authorities/local/root.crt
+```
+→ Paramètres → Sécurité → Installer un certificat.
+
+À faire **à la base, avec du réseau** : sur le terrain il sera trop tard, et le
+préchargement du code radio (71 ko) a besoin d'une connexion au premier
+démarrage.
+
+### Avec internet
+
+Un nom de domaine et le premier bloc du `Caddyfile` suffisent : Let's Encrypt
+s'occupe du certificat. Le `Dockerfile` et `fly.toml` couvrent un déploiement
+hébergé.
+
+### Avant de partir
+
+| Vérification | Comment |
+|---|---|
+| L'application se construit | `npm run typecheck && npm test && npm run build` |
+| La page s'ouvre en HTTPS sur le téléphone | le cadenas s'affiche, sans avertissement |
+| Le bouton « Module radio » est actif | tiroir → Options ; s'il est grisé, lire le motif |
+| Le code radio est en cache | ouvrir l'app une fois avec du réseau, puis couper |
+| Les modules se voient entre eux | via l'application Meshtastic officielle, avant TacQuest |
+
+## 3. Ce qui exige du matériel
 
 Aucun test automatique ne couvre la couche physique : appairage GATT réel,
 portée, duty cycle, comportement du firmware. Cette partie se valide avec au
@@ -144,7 +198,7 @@ ensemble — séparés, ils ne veulent rien dire.
 
 ---
 
-## 3. Ce qui n'est délibérément pas testé
+## 4. Ce qui n'est délibérément pas testé
 
 - **La portée et le duty cycle** : hors de portée d'un test logiciel. Le
   gouverneur d'airtime est dimensionné sur les chiffres du § 1 ; il faut le
