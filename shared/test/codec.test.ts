@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
 import type { OrderMessage } from '../src/protocol';
-import { MESH_MAX_PAYLOAD, MISSION_UNKNOWN } from '../src/mesh/constants';
+import { MESH_MAX_PAYLOAD, MISSION_UNKNOWN, RELAY_OVERHEAD } from '../src/mesh/constants';
 import { MeshCodecError } from '../src/mesh/bytes';
 import {
   type DecodeContext,
@@ -15,7 +15,9 @@ import {
   encodeMember,
   encodeOrder,
   encodeOrderFitted,
+  encodeRelay,
   encodeReq,
+  RELAY_INNER_BUDGET,
   nodeToMemberId,
 } from '../src/mesh/codec';
 import { encodeOffset } from '../src/mesh/geo';
@@ -400,4 +402,56 @@ test('un tracé déjà court n’est pas touché par l’ajustement', () => {
   const fitted = encodeOrderFitted(src, ctx);
   assert.equal(fitted.droppedPoints, 0);
   assert.deepEqual(fitted.bytes, encodeOrder(src, ctx));
+});
+
+test('relais : l’auteur d’origine est préservé', () => {
+  // Sans enveloppe, réémettre l'ordre d'un tiers l'attribuerait à l'émetteur,
+  // et un `remove` ultérieur viserait le mauvais figuré.
+  const src: OrderMessage = {
+    id: 'a4f2c810:0020',
+    authorId: nodeToMemberId(NODE),
+    ts: TS,
+    kind: 'waypoint',
+    payload: { kind: 'waypoint', name: 'ENI', lat: 45.01, lng: 5.01, sidc: 'SHGP-------' },
+  };
+  const inner = encodeOrder(src, ctx);
+  const relayed = encodeRelay(NODE, inner);
+
+  // Décodée par un nœud tiers : le champ `from` du paquet est celui du relais.
+  const relayCtx: DecodeContext = { ...ctx, from: 0x00009999 };
+  const frame = decodeFrame(relayed, relayCtx);
+  assert.equal(frame.kind, 'order');
+  const order = (frame as { kind: 'order'; order: OrderMessage }).order;
+  assert.equal(order.id, src.id, 'l’identifiant doit rester celui de l’auteur');
+  assert.equal(order.authorId, nodeToMemberId(NODE));
+  assert.equal((order.payload as { name: string }).name, 'ENI');
+});
+
+test('relais : surcoût de 5 octets exactement', () => {
+  const src: OrderMessage = {
+    id: 'a4f2c810:0021',
+    authorId: nodeToMemberId(NODE),
+    ts: TS,
+    kind: 'remove',
+    payload: { kind: 'remove', orderId: 'a4f2c810:0002' },
+  };
+  const inner = encodeOrder(src, ctx);
+  assert.equal(encodeRelay(NODE, inner).length - inner.length, RELAY_OVERHEAD);
+});
+
+test('relais : le budget intérieur laisse la place à l’enveloppe', () => {
+  const heavy: OrderMessage = {
+    id: 'a4f2c810:0022',
+    authorId: nodeToMemberId(NODE),
+    ts: TS,
+    kind: 'graphic',
+    payload: {
+      kind: 'graphic',
+      geojson: feature(Array.from({ length: 60 }, (_, i) => [5.0 + i * 0.0012, 45.0 + i * 0.0009])),
+      style: { color: '#af52de', weight: 4, label: 'X'.repeat(32) },
+    },
+  };
+  const { bytes } = encodeOrderFitted(heavy, ctx, RELAY_INNER_BUDGET);
+  assert.ok(bytes.length <= RELAY_INNER_BUDGET, `intérieur : ${bytes.length} o`);
+  assert.ok(encodeRelay(NODE, bytes).length <= MESH_MAX_PAYLOAD, 'relais complet dans le budget');
 });

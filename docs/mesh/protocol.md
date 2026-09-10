@@ -156,7 +156,8 @@ trafic étranger sur `PRIVATE_APP` n'est nécessaire.
 | `0x7` | `DIGEST` | non |
 | `0x8` | `REQ` | non |
 | `0x9` | `MEMBER` | non |
-| `0xA`-`0xF` | réservés | — |
+| `0xA` | `RELAY` | enveloppe |
+| `0xB`-`0xF` | réservés | — |
 
 ### 4.2 En-tête des trames porteuses d'ordre
 
@@ -233,7 +234,29 @@ str     body       plafonné à 180 o
 Utilisé uniquement quand le message doit porter un identifiant d'ordre pour le
 journal CRDT ; le chat ordinaire passe par `TEXT_MESSAGE_APP`.
 
-### 4.8 Trames de contrôle
+### 4.8 `RELAY` (0xA)
+
+```
+u8      version|opcode
+u32     nœud auteur
+…       trame d'ordre complète, telle qu'émise par son auteur
+```
+
+Les trames d'ordre élident le nœud auteur : le destinataire le reconstruit
+depuis l'en-tête du paquet. Un tiers ne peut donc pas réémettre tel quel
+l'ordre d'un autre — il se l'attribuerait, et un `remove` ultérieur viserait le
+mauvais figuré.
+
+`RELAY` porte l'auteur explicitement, pour **5 octets** (en-tête + numéro de
+nœud), et uniquement sur les réémissions. C'est ce qui permet à n'importe quel
+détenteur de servir un retardataire dont l'auteur est hors de portée — le
+propre d'un mesh. Sans cette trame, l'anti-entropie du § 6.3 ne fonctionnerait
+qu'avec l'auteur présent et à portée.
+
+Le budget de la trame intérieure est réduit d'autant
+(`RELAY_INNER_BUDGET = 195`), et `encodeOrderFitted` en tient compte.
+
+### 4.9 Trames de contrôle
 
 ```
 ANCHOR   u8 hdr · i32 latE7 · i32 lngE7 · u32 epochSec · u8 flags(bit0 originator)
@@ -242,7 +265,7 @@ REQ      u8 hdr · u32 node · u16 from · u8 count
 MEMBER   u8 hdr · u8 flags(bit0 isLeader) · str callsign (≤ 16 o)
 ```
 
-### 4.9 Tailles mesurées
+### 4.10 Tailles mesurées
 
 Valeurs produites par l'implémentation (`shared/src/mesh/codec.ts`) :
 
@@ -266,7 +289,7 @@ Valeurs produites par l'implémentation (`shared/src/mesh/codec.ts`) :
 Le rectangle tient en **15 octets**, dans la cible de 10-15 octets du cahier des
 charges.
 
-### 4.10 Dépassement du budget
+### 4.11 Dépassement du budget
 
 `encodeOrder()` **lève** `MeshCodecError` au-delà de 200 o : aucun dépassement
 ne passe en silence, et les tests le vérifient.
@@ -345,9 +368,23 @@ n'est pas implémentée. Le rattrapage est incrémental :
   (240 o) ne tient pas dans une trame : on émet un **sous-ensemble tournant**
   d'au plus 32 entrées (194 o).
 - **`REQ`** — demande explicite de réémission d'une plage `(node, from, count)`.
-- Un nœud qui constate, à la lecture d'un `DIGEST`, qu'un pair lui manque des
-  ordres qu'il détient les réémet avec **gigue et fenêtre de suppression**, pour
-  qu'un seul nœud réponde plutôt que tous à la fois.
+  Nécessaire pour les **trous internes** : un digest n'annonce que le plus haut
+  numéro contigu, un ordre manquant au milieu d'une séquence est donc invisible
+  pour les pairs.
+Le mécanisme joue **dans les deux sens**, et c'est indispensable :
+
+- à la lecture d'un `DIGEST`, un nœud qui détient des ordres manquant au pair
+  les réémet, avec **gigue et fenêtre de suppression** — le premier à parler
+  fait taire les autres, si bien qu'un seul répond au lieu de tous ;
+- **symétriquement**, un nœud compare l'annonce reçue à ce qu'il détient et
+  réclame ce qui lui manque. Sans ce volet, le mécanisme serait borgne : un
+  nœud qui a tout raté ne détient rien, n'annonce donc rien, et personne ne
+  pourrait deviner son retard. C'est en écoutant le digest d'un pair qu'il
+  découvre l'existence d'un auteur et l'ampleur de son retard.
+
+Les réémissions comme les demandes partent avec une gigue et sont revérifiées
+au moment de l'envoi : une plage comblée entre-temps par la réponse d'un autre
+n'est pas redemandée.
 - `STORE_FORWARD_APP` complète le dispositif pour les retardataires quand un
   nœud de classe routeur est présent.
 

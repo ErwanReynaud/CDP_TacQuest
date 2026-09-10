@@ -38,7 +38,8 @@ shared/src/
   mesh/                codec binaire LoRa : geo, bytes, ids, palette, codec
 client/src/
   mesh/                radio : plateforme, BLE, position, mesh simulé
-  crdt/                LWW-Register positions, OR-Set add-wins ordres
+  crdt/                LWW-Register positions, OR-Set add-wins ordres,
+                       vecteur de versions et anti-entropie
   transport/           façade serveur + mesh, attribution des identifiants
   map/, views/         carte et interface (inchangées)
 server/src/            salles, ordres, administration
@@ -70,9 +71,6 @@ incompatible.
 
 ## Reste à faire
 
-- Boucle d'anti-entropie `DIGEST`/`REQ` : les trames sont spécifiées, encodées
-  et testées ; la cadence, la gigue et la fenêtre de suppression restent à
-  écrire. Le rattrapage repose aujourd'hui sur la réémission par l'auteur.
 - Persistance des ordres en mode mesh seul (sans session serveur, ils vivent
   en mémoire).
 - Gouverneur d'airtime avec files par priorité (alerte > ordre > position >

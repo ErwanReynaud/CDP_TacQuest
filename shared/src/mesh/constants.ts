@@ -34,7 +34,7 @@ export const PORTNUM_ATAK_PLUGIN = 72;
 export const PORTNUM_STORE_FORWARD_APP = 65;
 export const PORTNUM_ADMIN_APP = 6;
 
-/** Opcodes (nibble bas de l'octet 0). 0x0-0x9 utilisés, 0xA-0xF réservés. */
+/** Opcodes (nibble bas de l'octet 0). 0x0-0xA utilisés, 0xB-0xF réservés. */
 export const OP = {
   ANCHOR: 0x0,
   WAYPOINT: 0x1,
@@ -46,6 +46,17 @@ export const OP = {
   DIGEST: 0x7,
   REQ: 0x8,
   MEMBER: 0x9,
+  /**
+   * Relais d'un ordre dont nous ne sommes pas l'auteur.
+   *
+   * Les trames d'ordre élident le nœud auteur — le destinataire le reconstruit
+   * depuis l'en-tête du paquet. Un tiers ne peut donc pas réémettre tel quel
+   * l'ordre d'un autre : l'auteur serait reconstruit à son nom. RELAY enveloppe
+   * la trame d'origine en portant l'auteur explicitement (4 octets), ce qui
+   * permet à n'importe quel détenteur de servir un retardataire — le propre
+   * d'un mesh.
+   */
+  RELAY: 0xa,
 } as const;
 export type Opcode = (typeof OP)[keyof typeof OP];
 
@@ -106,6 +117,9 @@ export const ECHELONS = ['section', 'company', 'battalion'] as const;
 /** Enveloppe d'une ancre : ±32 767 m sur chaque axe (int16, résolution 1 m). */
 export const ANCHOR_RANGE_M = 32767;
 
+/** Surcoût d'une enveloppe RELAY : octet d'en-tête + numéro de nœud auteur. */
+export const RELAY_OVERHEAD = 5;
+
 /**
  * Durée de vie d'un tombstone, alignée sur ROOM_EMPTY_TTL_MS (24 h).
  * Au-delà, un nœud resté hors portée plus longtemps peut ressusciter un objet
@@ -115,6 +129,30 @@ export const TOMBSTONE_TTL_MS = 24 * 60 * 60_000;
 
 /** Nombre maximal d'entrées dans un DIGEST (1 + 32×6 = 193 o ≤ 200). */
 export const DIGEST_MAX_ENTRIES = 32;
+
+/**
+ * Cadence d'émission d'un digest. Volontairement lente : c'est un filet de
+ * sécurité, pas un canal de synchronisation. Trop rapide, il mangerait
+ * l'airtime qu'il est censé préserver.
+ */
+export const DIGEST_INTERVAL_MS = 5 * 60_000;
+
+/**
+ * Gigue avant une réémission. Tous les nœuds qui détiennent un ordre manquant
+ * le voient au même instant : sans délai aléatoire, ils répondraient tous
+ * ensemble et se collisionneraient. Le premier à parler fait taire les autres
+ * (cf. RESEND_SUPPRESSION_MS).
+ */
+export const RESEND_JITTER_MS = 15_000;
+
+/**
+ * Fenêtre de suppression : un ordre entendu récemment n'est pas réémis. C'est
+ * ce qui transforme « tout le monde répond » en « un seul répond ».
+ */
+export const RESEND_SUPPRESSION_MS = 60_000;
+
+/** Réémissions maximales déclenchées par un seul digest, pour borner la rafale. */
+export const RESEND_MAX_PER_DIGEST = 8;
 
 /**
  * Cadence de position en mode mesh. POSITION_INTERVAL_MS vaut 30 s côté

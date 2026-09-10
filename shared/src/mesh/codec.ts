@@ -9,7 +9,15 @@
 //    quand ils valent l'émetteur du paquet : ils viennent du champ `from`.
 
 import type { GraphicStyle, LineEchelon, OrderMessage } from '../protocol';
-import { ECHELONS, GEOM, MESH_PROTOCOL_VERSION, MISSION_UNKNOWN, OP } from './constants';
+import {
+  ECHELONS,
+  GEOM,
+  MESH_MAX_PAYLOAD,
+  MESH_PROTOCOL_VERSION,
+  MISSION_UNKNOWN,
+  OP,
+  RELAY_OVERHEAD,
+} from './constants';
 import { MeshCodecError, Reader, Writer } from './bytes';
 import { type Anchor, decodeOffset, encodeOffset } from './geo';
 import { colorToIndex, indexToColor, indexToSidc, sidcToIndex } from './palette';
@@ -169,10 +177,14 @@ function writeRef(w: Writer, target: OrderId, selfNode: number): void {
  * `order.id` doit être au format mesh (node:seq) : un uuid hérité est refusé,
  * car sa forme longue ne tient pas dans le budget.
  */
-export function encodeOrder(order: OrderMessage, ctx: MeshContext): Uint8Array {
+export function encodeOrder(
+  order: OrderMessage,
+  ctx: MeshContext,
+  budget = MESH_MAX_PAYLOAD,
+): Uint8Array {
   const id = parseOrderId(order.id);
   if (!id) throw new MeshCodecError(`identifiant non-mesh : ${order.id}`);
-  const w = new Writer();
+  const w = new Writer(budget);
   const p = order.payload;
 
   switch (p.kind) {
@@ -264,6 +276,13 @@ export function decodeFrame(bytes: Uint8Array, ctx: DecodeContext): MeshFrame {
   const op = b0 & 0x0f;
   if (version !== MESH_PROTOCOL_VERSION) {
     throw new MeshCodecError(`version de protocole ${version} non gérée (attendu ${MESH_PROTOCOL_VERSION})`);
+  }
+
+  // Relais : l'auteur est porté explicitement, et la trame intérieure se
+  // décode comme si elle venait directement de lui.
+  if (op === OP.RELAY) {
+    const authorNode = r.u32();
+    return decodeFrame(bytes.subarray(5), { ...ctx, from: authorNode });
   }
 
   // --- trames de contrôle ---
@@ -408,6 +427,24 @@ export function encodeReq(node: number, from: number, count: number): Uint8Array
   return new Writer().u8(header(OP.REQ)).u32(node).u16(from).u8(count).bytes();
 }
 
+/**
+ * Enveloppe une trame d'ordre déjà encodée pour la relayer au nom de son auteur.
+ *
+ * Utilisé par l'anti-entropie : sans cela, seul l'auteur d'un ordre pourrait le
+ * réémettre, et un retardataire dont l'auteur est hors de portée ne rattraperait
+ * jamais son retard.
+ */
+export function encodeRelay(authorNode: number, inner: Uint8Array): Uint8Array {
+  const w = new Writer().u8(header(OP.RELAY)).u32(authorNode);
+  const out = new Uint8Array(w.length + inner.length);
+  out.set(w.bytes(), 0);
+  out.set(inner, w.length);
+  return out;
+}
+
+/** Budget disponible pour la trame intérieure d'un relais. */
+export const RELAY_INNER_BUDGET = MESH_MAX_PAYLOAD - RELAY_OVERHEAD;
+
 export function encodeMember(callsign: string, isLeader: boolean): Uint8Array {
   return new Writer().u8(header(OP.MEMBER)).u8(isLeader ? 1 : 0).str(callsign, 16).bytes();
 }
@@ -460,9 +497,13 @@ export interface FittedFrame {
  * C'est cette variante que la couche transport doit appeler ; `encodeOrder`
  * reste stricte pour que les tests détectent tout dépassement silencieux.
  */
-export function encodeOrderFitted(order: OrderMessage, ctx: MeshContext): FittedFrame {
+export function encodeOrderFitted(
+  order: OrderMessage,
+  ctx: MeshContext,
+  budget = MESH_MAX_PAYLOAD,
+): FittedFrame {
   try {
-    return { bytes: encodeOrder(order, ctx), droppedPoints: 0 };
+    return { bytes: encodeOrder(order, ctx, budget), droppedPoints: 0 };
   } catch (err) {
     if (!(err instanceof MeshCodecError) || order.payload.kind !== 'graphic') throw err;
   }
@@ -489,7 +530,7 @@ export function encodeOrderFitted(order: OrderMessage, ctx: MeshContext): Fitted
       },
     };
     try {
-      return { bytes: encodeOrder(candidate, ctx), droppedPoints: initial - pts.length };
+      return { bytes: encodeOrder(candidate, ctx, budget), droppedPoints: initial - pts.length };
     } catch (err) {
       if (!(err instanceof MeshCodecError)) throw err;
     }

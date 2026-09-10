@@ -7,7 +7,13 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MemberPublic, OrderMessage, Position } from '@tq/shared/protocol';
-import { MESH_MAX_PAYLOAD, MESH_POSITION_INTERVAL_MS } from '@tq/shared/mesh/constants';
+import {
+  DIGEST_INTERVAL_MS,
+  MESH_MAX_PAYLOAD,
+  MESH_POSITION_INTERVAL_MS,
+  RESEND_JITTER_MS,
+  RESEND_SUPPRESSION_MS,
+} from '@tq/shared/mesh/constants';
 import { visibleGraphics, visibleWaypoints } from '../map/orderFilter';
 import { mergeOrder, type OrderStore } from '../crdt/orders';
 import { MockMesh, type MockRadio } from '../mesh/mockRadio';
@@ -28,6 +34,9 @@ interface Node {
   events: string[];
 }
 
+/** Horloge simulée, partagée par tous les nœuds d'un même scénario. */
+const clock = { t: TS };
+
 function node(mesh: MockMesh, nodeNum: number, room = ROOM): Node {
   const radio = mesh.radio(nodeNum);
   const orders: OrderStore = new Map();
@@ -36,6 +45,7 @@ function node(mesh: MockMesh, nodeNum: number, room = ROOM): Node {
   const transport = new MeshTransport({
     radio, room, orders, members,
     emit: (e) => events.push(e),
+    now: () => clock.t,
   });
   return { radio, orders, members, transport, events };
 }
@@ -57,12 +67,19 @@ const gfx = (id: string, ts: number): OrderMessage => ({
   },
 });
 
+/** Composer un ordre = l'appliquer chez soi puis l'émettre, comme le fait la façade. */
+async function compose(n: Node, o: OrderMessage): Promise<void> {
+  mergeOrder(n.orders, o);
+  await n.transport.sendOrder(o);
+}
+
 const fix = (ts: number, lat = 45.01): Position => ({
   lat, lng: 5.02, accuracy: 5, heading: null, speed: null, ts,
 });
 
 beforeEach(() => {
   resetOrderIds();
+  clock.t = TS;
 });
 
 describe('transmission d’ordres entre deux nœuds', () => {
@@ -138,14 +155,19 @@ describe('transmission d’ordres entre deux nœuds', () => {
 });
 
 describe('garde-fous d’émission', () => {
-  it('refuse un ordre composé sous un autre nœud', async () => {
+  it('relaie l’ordre d’un autre nœud en préservant son auteur', async () => {
+    // Le codec élide l'auteur : réémettre tel quel l'ordre d'un tiers
+    // l'attribuerait à notre module, et un `remove` viserait le mauvais
+    // figuré. L'enveloppe RELAY porte l'auteur explicitement — c'est ce qui
+    // permet à un détenteur quelconque de servir un retardataire.
     const mesh = new MockMesh();
     const a = node(mesh, 0x11);
     const b = node(mesh, 0x22);
-    // Identifiant d'un autre espace : le destinataire reconstruirait un auteur
-    // faux, et un `remove` viserait le mauvais figuré.
-    expect(await a.transport.sendOrder(wp('00009999:0001', TS))).toBe(false);
-    expect(b.orders.size).toBe(0);
+    expect(await a.transport.sendOrder(wp('00009999:0001', TS))).toBe(true);
+    const received = visibleWaypoints(b.orders);
+    expect(received).toHaveLength(1);
+    expect(received[0]!.id).toBe('00009999:0001');
+    expect(received[0]!.authorId).toBe('00009999');
   });
 
   it('refuse un identifiant uuid hérité', async () => {
@@ -238,12 +260,6 @@ describe('partition réseau', () => {
     const a = node(mesh, 0x11);
     const b = node(mesh, 0x22);
 
-    /** Composer un ordre = l'appliquer chez soi puis l'émettre, comme la façade. */
-    const compose = async (n: Node, o: OrderMessage): Promise<void> => {
-      mergeOrder(n.orders, o);
-      await n.transport.sendOrder(o);
-    };
-
     const nordENI = wp('00000011:0010', TS, 'ENI nord');
     const sudENI = wp('00000022:0010', TS + 100, 'ENI sud');
 
@@ -276,5 +292,96 @@ describe('partition réseau', () => {
     const b = node(mesh, 0x22);
     for (let i = 0; i < 4; i++) await a.transport.sendOrder(wp('00000011:0011', TS));
     expect(visibleWaypoints(b.orders)).toHaveLength(1);
+  });
+});
+
+describe('anti-entropie de bout en bout', () => {
+  /** Fait battre l'anti-entropie de chaque nœud jusqu'à `until`. */
+  function run(nodes: Node[], from: number, until: number, stepMs = 5_000): void {
+    for (let t = from; t <= until; t += stepMs) {
+      clock.t = t;
+      for (const n of nodes) n.transport.tick(t);
+    }
+  }
+
+  it('rattrape un ordre perdu par le canal, sans intervention de l’auteur', async () => {
+    // Le nœud B rate la trame. Sans anti-entropie, ce figuré est perdu pour
+    // lui définitivement : l'auteur n'a aucune raison de le réémettre.
+    const mesh = new MockMesh();
+    const a = node(mesh, 0x11);
+    const b = node(mesh, 0x22);
+    const c = node(mesh, 0x33);
+
+    mesh.partition('seul', [0x22]); // B n'entend rien
+    await compose(a, wp('00000011:0001', TS, 'ENI'));
+    mesh.heal();
+    expect(visibleWaypoints(b.orders)).toHaveLength(0);
+    expect(visibleWaypoints(c.orders)).toHaveLength(1);
+
+    // B annonce ce qu'il détient ; C, qui a l'ordre, le lui réémet.
+    run([a, b, c], TS + RESEND_SUPPRESSION_MS, TS + RESEND_SUPPRESSION_MS + DIGEST_INTERVAL_MS + RESEND_JITTER_MS);
+
+    expect(visibleWaypoints(b.orders).map((w) => w.name)).toEqual(['ENI']);
+  });
+
+  it('un seul nœud répond, grâce à la gigue et à la suppression', async () => {
+    // Cinq nœuds détiennent l'ordre manquant. Sans suppression, les cinq
+    // répondraient au même digest et se collisionneraient.
+    const mesh = new MockMesh();
+    const holders = [0x11, 0x33, 0x44, 0x55, 0x66].map((n) => node(mesh, n));
+    const retardataire = node(mesh, 0x22);
+
+    mesh.partition('seul', [0x22]);
+    await compose(holders[0]!, wp('00000011:0002', TS, 'OBJ'));
+    mesh.heal();
+
+    const before = mesh.sent.length;
+    const t = TS + RESEND_SUPPRESSION_MS;
+    run([...holders, retardataire], t, t + DIGEST_INTERVAL_MS + RESEND_JITTER_MS * 2);
+
+    expect(visibleWaypoints(retardataire.orders)).toHaveLength(1);
+    // Digests compris, la reprise doit rester très en deçà d'une réponse par
+    // détenteur multipliée par les tours de battement.
+    const emitted = mesh.sent.length - before;
+    expect(emitted).toBeLessThan(20);
+  });
+
+  it('réclame ses propres trous, invisibles pour les pairs', async () => {
+    // Un digest n'annonce que le plus haut contigu : personne ne peut deviner
+    // qu'il manque un ordre au milieu de la séquence.
+    const mesh = new MockMesh();
+    const a = node(mesh, 0x11);
+    const b = node(mesh, 0x22);
+
+    await compose(a, wp('00000011:0001', TS, 'un'));
+    mesh.partition('seul', [0x22]);
+    await compose(a, wp('00000011:0002', TS + 10, 'deux'));
+    mesh.heal();
+    await compose(a, wp('00000011:0003', TS + 20, 'trois'));
+
+    // B détient 1 et 3 : le trou est en 2.
+    expect(visibleWaypoints(b.orders).map((w) => w.name).sort()).toEqual(['trois', 'un']);
+
+    const t = TS + RESEND_SUPPRESSION_MS;
+    run([a, b], t, t + DIGEST_INTERVAL_MS + RESEND_JITTER_MS);
+    expect(visibleWaypoints(b.orders).map((w) => w.name).sort()).toEqual(['deux', 'trois', 'un']);
+  });
+
+  it('ne produit aucun trafic quand tout le monde est à jour', async () => {
+    const mesh = new MockMesh();
+    const a = node(mesh, 0x11);
+    const b = node(mesh, 0x22);
+    await compose(a, wp('00000011:0004', TS, 'ENI'));
+
+    const t = TS + RESEND_SUPPRESSION_MS;
+    run([a, b], t, t + DIGEST_INTERVAL_MS + RESEND_JITTER_MS);
+    const afterFirstSync = mesh.sent.length;
+    // Deuxième période : des digests, mais aucune réémission d'ordre.
+    run([a, b], t + DIGEST_INTERVAL_MS * 2, t + DIGEST_INTERVAL_MS * 3);
+    const digestsOnly = mesh.sent.length - afterFirstSync;
+    expect(digestsOnly).toBeGreaterThan(0);
+    expect(visibleWaypoints(b.orders)).toHaveLength(1);
+    // Les digests sont petits : le filet ne coûte presque rien au repos.
+    expect(mesh.sent.slice(afterFirstSync).every((s) => s.bytes < 20)).toBe(true);
   });
 });

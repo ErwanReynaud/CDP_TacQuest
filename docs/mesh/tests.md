@@ -14,7 +14,7 @@ npm run build -w client   # la construction de production casse sur des choses
 
 ## 1. Ce qui est couvert automatiquement
 
-192 tests, dont 115 pour la couche mesh.
+224 tests, dont 147 pour la couche mesh.
 
 | Fichier | Ce qu'il verrouille |
 |---|---|
@@ -26,7 +26,9 @@ npm run build -w client   # la construction de production casse sur des choses
 | `client/src/mesh/portnums.test.ts` | chaque portnum confronté à l'énumération Meshtastic |
 | `client/src/map/meshCatalog.test.ts` | dictionnaires de missions, SIDC et couleurs alignés sur l'UI |
 | `client/src/crdt/*.test.ts` | add-wins, `clear`, compaction, convergence quel que soit l'ordre d'arrivée |
-| `client/src/transport/meshTransport.test.ts` | bout-en-bout entre deux nœuds : encodage, diffusion, décodage, fusion |
+| `client/src/crdt/versionVector.test.ts` | intervalles fusionnés, distinction contigu / plus haut détenu, trous |
+| `client/src/crdt/antiEntropy.test.ts` | réémission ciblée, gigue, suppression, digests tournants, demandes |
+| `client/src/transport/meshTransport.test.ts` | bout-en-bout entre deux nœuds : encodage, diffusion, décodage, fusion, et rattrapage réel d'un ordre perdu |
 | `client/src/mesh/meshScenario.test.ts` | mission de 30 min à 8 postes : convergence de tous les nœuds et budget radio |
 
 ### Le mesh simulé
@@ -97,7 +99,8 @@ Chrome/Edge).
 | 7 | Tracer un figuré de mission | il apparaît avec sa couleur et son figuré |
 | 8 | Tracer un tracé libre très découpé | il arrive **légèrement lissé** — c'est `encodeOrderFitted` |
 | 9 | Effacer toute la carte | un seul paquet, la carte se vide chez les deux |
-| 10 | Éteindre un module 5 min, composer des ordres, rallumer | après réémission, les deux cartes redeviennent identiques |
+| 10 | Éteindre un module 5 min, composer des ordres, rallumer | **sans rien faire**, le module revenu rattrape son retard en quelques minutes (digest puis réémission) |
+| 10b | Répéter avec un **troisième** module, en éteignant l'auteur des ordres | le retardataire est servi par le tiers : c'est l'enveloppe `RELAY` qui le permet |
 | 11 | Couper le Bluetooth pendant une émission | l'état passe à déconnecté, l'application ne se fige pas |
 
 ### Vérifications de plateforme
@@ -119,10 +122,6 @@ Chrome/Edge).
 - **La resynchronisation complète** : elle n'existe pas par conception
   (`docs/mesh/protocol.md` § 6.3). Les tests de partition valident le
   rattrapage par réémission, pas un transfert d'état intégral.
-- **`DIGEST` / `REQ`** : les trames sont spécifiées, encodées et testées en
-  aller-retour, mais la **boucle d'anti-entropie** qui les émet (cadence,
-  gigue, fenêtre de suppression) reste à écrire. Aujourd'hui le rattrapage
-  repose sur la réémission par l'auteur.
 - **Le pontage serveur → LoRa** : volontairement absent, un nœud pontant
   deviendrait le répéteur de toute une salle.
 - **La persistance des ordres en mode mesh seul** : la file hors-ligne et sa

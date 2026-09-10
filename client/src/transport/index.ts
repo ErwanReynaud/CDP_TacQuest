@@ -25,6 +25,16 @@ import { adoptRadioNode, localNode } from './orderIds';
 import * as server from '../socket';
 
 let mesh: MeshTransport | null = null;
+let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Cadence du battement d'anti-entropie.
+ *
+ * Bien plus rapide que l'intervalle entre deux digests : ce battement sert
+ * surtout à faire partir les réémissions dont la gigue est écoulée, et une
+ * gigue se compte en secondes.
+ */
+const HEARTBEAT_MS = 5_000;
 
 /**
  * Rattache une radio déjà connectée. Le numéro de nœud du module devient notre
@@ -36,10 +46,15 @@ export function attachMeshRadio(radio: Radio, log?: (m: string) => void): MeshTr
   if (radio.nodeNum !== null) adoptRadioNode(radio.nodeNum);
   radio.on('myNode', (nodeNum) => adoptRadioNode(nodeNum));
   mesh = new MeshTransport({ radio, log });
+  heartbeat = setInterval(() => mesh?.tick(), HEARTBEAT_MS);
   return mesh;
 }
 
 export function detachMesh(): void {
+  if (heartbeat) {
+    clearInterval(heartbeat);
+    heartbeat = null;
+  }
   mesh?.stop();
   mesh = null;
 }
