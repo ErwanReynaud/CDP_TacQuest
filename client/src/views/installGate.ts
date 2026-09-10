@@ -1,34 +1,25 @@
 // Page d'installation : sur mobile dans un navigateur (pas en PWA installée),
 // on masque le site et on explique comment ajouter l'app à l'écran d'accueil.
 // Un petit bouton permet de continuer quand même dans le navigateur.
+//
+// C'est aussi le premier des deux points où l'indisponibilité du mode radio est
+// annoncée — l'autre étant la tentative de connexion elle-même. Les deux tirent
+// leur diagnostic de mesh/platform.ts, pour ne jamais se contredire : rien de
+// pire que d'installer l'app sur la foi d'un message, puis de découvrir sur le
+// terrain que la radio ne se connecte pas.
+
+import { bleSupport, detectPlatform, isStandalone, type Platform } from '../mesh/platform';
 
 const DISMISS_KEY = 'tq-install-dismissed';
-
-type Platform = 'ios' | 'android';
-
-function detectPlatform(): Platform | null {
-  const ua = navigator.userAgent;
-  // iPadOS 13+ se déguise en macOS : on le repère au tactile.
-  const isIOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (isIOS) return 'ios';
-  if (/Android/.test(ua)) return 'android';
-  return null;
-}
-
-function isStandalone(): boolean {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    // iOS Safari : drapeau non standard.
-    (navigator as unknown as { standalone?: boolean }).standalone === true
-  );
-}
 
 // Doit-on afficher la page d'installation ? Mobile + navigateur + pas déjà ignorée.
 export function shouldShowInstallGate(): boolean {
   if (isStandalone()) return false;
-  if (detectPlatform() === null) return false;
+  // Sur poste fixe, l'installation est facultative et l'app est pleinement
+  // utilisable dans un onglet : on n'impose pas d'écran intermédiaire. Un
+  // navigateur de bureau incapable de Bluetooth est signalé dans le tiroir et
+  // à la connexion, pas ici.
+  if (detectPlatform() === 'desktop') return false;
   try {
     if (localStorage.getItem(DISMISS_KEY) === '1') return false;
   } catch {
@@ -37,13 +28,23 @@ export function shouldShowInstallGate(): boolean {
   return true;
 }
 
+/** Avertissement sur le mode radio, affiché seulement s'il est indisponible. */
+function radioWarning(): string {
+  const support = bleSupport();
+  if (support.supported) return '';
+  return `<p class="install-warning">⚠️ ${escapeText(support.message)}</p>`;
+}
+
+/** Les messages viennent de nos constantes, mais l'échappement reste la règle. */
+function escapeText(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+  );
+}
+
 function instructions(platform: Platform): string {
   if (platform === 'ios') {
     return `
-      <p class="install-warning">⚠️ Sur iPhone/iPad, la connexion au module
-         Meshtastic (Bluetooth) n'est pas disponible — limitation d'Apple/Safari,
-         même une fois l'app installée. Le suivi de position et les cartes
-         fonctionneront normalement.</p>
       <ol class="install-steps">
         <li>Ouvrez cette page dans <b>Safari</b> (l'installation ne marche pas
             depuis une autre app).</li>
@@ -69,7 +70,7 @@ function instructions(platform: Platform): string {
 // Construit et affiche la page. Renvoie une fonction de fermeture (continuer
 // dans le navigateur), qui mémorise le choix pour ne plus réafficher la page.
 export function showInstallGate(onContinue: () => void): void {
-  const platform = detectPlatform() ?? 'android';
+  const platform = detectPlatform();
 
   const gate = document.createElement('div');
   gate.id = 'install-gate';
@@ -79,6 +80,7 @@ export function showInstallGate(onContinue: () => void): void {
       <h1>TacticalQuest</h1>
       <p class="install-lead">Pour une carte plein écran, hors-ligne et plus
          fiable sur le terrain, installez l'application sur votre téléphone.</p>
+      ${radioWarning()}
       ${instructions(platform)}
       <button id="install-continue" class="install-skip">Continuer dans le navigateur</button>
     </div>`;

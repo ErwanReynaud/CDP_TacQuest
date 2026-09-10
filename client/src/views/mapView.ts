@@ -11,6 +11,9 @@ import { cachedElevation, coordsWithAltitudeHtml, elevationKey, fetchElevation, 
 import { connectForSession, leaveRoom, pendingOrderCount, restorePendingOrders, sendPosition } from '../transport';
 import { offerSoloImport, orderAuthor, restoreSoloOrders, SOLO_AUTHOR, submitOrder } from '../soloOrders';
 import { issueOrderId } from '../transport/orderIds';
+import { attachMeshRadio, detachMesh, meshTransport } from '../transport';
+import { BleUnavailableError, connectBleRadio, preloadBleRadio } from '../mesh/bleRadio';
+import { bleSupport } from '../mesh/platform';
 import { startGeolocation, type GeoWatcher } from '../geo';
 import { dlog, formatLog, clearLog, onLog } from '../debugLog';
 import { searchPlaces, type PlaceResult } from '../geocode';
@@ -1141,6 +1144,12 @@ export function initMapView(): void {
     if (!drawer.hidden) renderDrawer();
   });
 
+  $('btn-mesh').addEventListener('click', () => void toggleMesh());
+  renderMesh();
+  // Met le code radio en cache tant qu'il y a du réseau : sur le terrain, il
+  // sera trop tard.
+  preloadBleRadio();
+
   $('btn-room').addEventListener('click', () => openRoomMenu());
   $('btn-clear-map').addEventListener('click', clearWholeMap);
 
@@ -1172,6 +1181,68 @@ export function initMapView(): void {
   $('btn-geo-dismiss').addEventListener('click', () => {
     $('geo-overlay').hidden = true;
   });
+}
+
+// --- liaison radio (module Meshtastic en Bluetooth) ---
+
+function setMeshStatus(text: string, tone: 'ok' | 'ko' | 'neutral'): void {
+  const el = $('mesh-status');
+  el.textContent = text;
+  el.className = `mesh-status${tone === 'neutral' ? '' : ` mesh-${tone}`}`;
+  el.hidden = !text;
+}
+
+/** Reflète l'état de la liaison sur le bouton et la ligne d'état du tiroir. */
+function renderMesh(): void {
+  const btn = $<HTMLButtonElement>('btn-mesh');
+  const mesh = meshTransport();
+  if (mesh) {
+    btn.textContent = 'Déconnecter';
+    setMeshStatus('Module radio connecté.', 'ok');
+    return;
+  }
+  btn.textContent = 'Connecter';
+  // Sur une plateforme incapable, on l'annonce sans attendre que
+  // l'utilisateur tente la connexion et échoue : le bouton reste inerte, et
+  // le motif exact est affiché (cf. mesh/platform.ts).
+  const support = bleSupport();
+  if (!support.supported) {
+    btn.disabled = true;
+    setMeshStatus(support.message, 'ko');
+  } else {
+    setMeshStatus('', 'neutral');
+  }
+}
+
+async function toggleMesh(): Promise<void> {
+  if (meshTransport()) {
+    detachMesh();
+    renderMesh();
+    toast('Module radio déconnecté.');
+    return;
+  }
+  const btn = $<HTMLButtonElement>('btn-mesh');
+  btn.disabled = true;
+  setMeshStatus('Recherche du module…', 'neutral');
+  try {
+    const radio = await connectBleRadio();
+    const mesh = attachMeshRadio(radio, (m) => dlog('mesh', m));
+    if (state.session) mesh.announce(state.session.callsign);
+    // Un fix déjà acquis établit l'ancre de zone tout de suite, au lieu
+    // d'attendre le cycle de géolocalisation suivant.
+    const fix = geo?.getLastFix();
+    if (fix) mesh.ensureAnchor(fix.lat, fix.lng);
+    radio.on('status', () => renderMesh());
+    toast('Module radio connecté.');
+  } catch (err) {
+    const message =
+      err instanceof BleUnavailableError ? err.message : `Connexion impossible : ${String(err)}`;
+    setMeshStatus(message, 'ko');
+    dlog('mesh', message);
+  } finally {
+    btn.disabled = false;
+    renderMesh();
+  }
 }
 
 export function toast(text: string, action?: { label: string; onClick: () => void }): void {

@@ -317,6 +317,19 @@ input[type='text']:focus { outline: 2px solid var(--accent); border-color: trans
 /* Le display:flex ci-dessus outrepasserait l'attribut hidden (règle UA). */
 .option-row[hidden] { display: none; }
 .option-row > span { color: var(--muted); }
+
+/* État de la liaison radio, sous son bouton dans le tiroir. Le message
+   d'indisponibilité peut être long (il explique la cause et le recours) : on
+   le laisse s'enrouler plutôt que de le tronquer. */
+.mesh-status {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+.mesh-status[hidden] { display: none; }
+.mesh-status.mesh-ok { color: #5dbb63; }  /* même vert que .conn-connected */
+.mesh-status.mesh-ko { color: var(--warn); }
 .segmented { display: flex; gap: 0; }
 .segmented button {
   background: var(--panel-2);
