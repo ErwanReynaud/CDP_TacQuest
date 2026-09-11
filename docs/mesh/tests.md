@@ -1,7 +1,11 @@
-# Validation de la liaison BLE et LoRa
+# Tests automatiques de la couche mesh
 
-Deux niveaux, complémentaires : ce qui est vérifié automatiquement à chaque
-commit, et ce qui exige du matériel.
+Ce que la CI vérifie à chaque poussée, et comment se servir du mesh simulé pour
+travailler sans matériel.
+
+> **Procédures de terrain :** [`docs/validation.md`](../validation.md).
+> Ce document-ci s'adresse au développement ; celui-là à la campagne d'essais,
+> en réseau comme hors réseau.
 
 ```sh
 npm test        # les trois paquets
@@ -75,139 +79,21 @@ que le gouverneur d'airtime arbitre (`docs/mesh/protocol.md` § 7).
 
 ---
 
-## 2. Monter le banc d'essai
-
-### Le HTTPS n'est pas optionnel
-
-Le Bluetooth Web n'existe **que** en contexte sécurisé. Servi en `http://`
-depuis une adresse IP de réseau local, `navigator.bluetooth` est simplement
-absent, et l'application l'annonce correctement — « connexion sécurisée
-requise » — mais aucun module ne pourra être appairé. C'est le premier écueil
-d'une sortie terrain, et il n'a rien à voir avec la radio.
-
-Seule exception : `http://localhost` est considéré comme sécurisé. Un test sur
-le portable qui héberge le serveur fonctionne donc sans TLS ; sur un téléphone,
-non.
-
-### Sur le terrain, sans internet
-
-Le `Caddyfile` à la racine couvre exactement ce cas — décommenter le second
-bloc, commenter le premier :
-
-```sh
-npm ci
-npm run build          # produit client/dist
-npm start              # serveur Node sur :3000
-caddy run              # TLS devant, avec sa propre autorité
-```
-
-Caddy génère alors son propre certificat racine. Il faut l'installer **une
-fois** sur chaque téléphone, sans quoi le navigateur refusera la page :
-
-```
-~/.local/share/caddy/pki/authorities/local/root.crt
-```
-→ Paramètres → Sécurité → Installer un certificat.
-
-À faire **à la base, avec du réseau** : sur le terrain il sera trop tard, et le
-préchargement du code radio (71 ko) a besoin d'une connexion au premier
-démarrage.
-
-### Avec internet
-
-Un nom de domaine et le premier bloc du `Caddyfile` suffisent : Let's Encrypt
-s'occupe du certificat. Le `Dockerfile` et `fly.toml` couvrent un déploiement
-hébergé.
-
-### Avant de partir
-
-| Vérification | Comment |
-|---|---|
-| L'application se construit | `npm run typecheck && npm test && npm run build` |
-| La page s'ouvre en HTTPS sur le téléphone | le cadenas s'affiche, sans avertissement |
-| Le bouton « Module radio » est actif | tiroir → Options ; s'il est grisé, lire le motif |
-| Le code radio est en cache | ouvrir l'app une fois avec du réseau, puis couper |
-| Les modules se voient entre eux | via l'application Meshtastic officielle, avant TacQuest |
-
-## 3. Ce qui exige du matériel
-
-Aucun test automatique ne couvre la couche physique : appairage GATT réel,
-portée, duty cycle, comportement du firmware. Cette partie se valide avec au
-moins **deux modules** et **un appareil Android sous Chrome** (ou un PC sous
-Chrome/Edge).
-
-### Préparation des modules
-
-1. Flasher Meshtastic (2.6 ou plus récent, pour correspondre à
-   `@meshtastic/core` 2.6.7).
-2. Régler la **région** : `EU_868` en Europe. Sans région, le module n'émet pas.
-3. Choisir le préréglage : `LongFast` par défaut ; `MediumSlow` si la portée
-   compte plus que le débit.
-4. Configurer le **même canal et la même PSK** sur tous les modules : c'est ce
-   qui matérialise une salle TacQuest.
-5. Vérifier que les modules se voient entre eux depuis l'application Meshtastic
-   officielle **avant** de tester TacQuest. Cela sépare un problème de radio
-   d'un problème d'application.
-
-### Lire le panneau de diagnostic
-
-Tiroir → **Diagnostic**. Le bloc « Liaison radio » se rafraîchit toutes les
-deux secondes et se termine par une phrase qui dit quoi faire :
-
-| Ce qu'affiche le panneau | Ce que ça veut dire |
-|---|---|
-| « Aucune trame reçue » | personne à portée, ou canal et clé différents |
-| « aucune n'est décodable » | la radio marche, les versions de TacQuest divergent |
-| « En attente d'un premier point GPS » | pas encore d'ancre de zone, rien ne peut être encodé |
-| « Rattrapage en cours : N trous » | l'anti-entropie travaille, laisser quelques minutes |
-| « Lien nominal, carte à jour » | rien à signaler |
-
-La distinction entre « rien n'arrive » et « ça arrive mais c'est illisible » est
-la plus utile des cinq : la première envoie vérifier la portée et la clé, la
-seconde les versions installées. **Copier** emporte l'état radio et le journal
-ensemble — séparés, ils ne veulent rien dire.
-
-### Séquence de validation
-
-| # | Étape | Attendu |
-|---|---|---|
-| 1 | Ouvrir TacQuest en **HTTPS** sur Android/Chrome | le tiroir affiche « Module radio · Connecter », actif |
-| 2 | Toucher « Connecter », choisir le module | « Module radio connecté. », le bouton devient « Déconnecter » |
-| 3 | Attendre un fix GPS | l'ancre de zone est établie (visible au journal `mesh`) |
-| 4 | Sur le second appareil, même opération | chaque poste voit l'indicatif de l'autre dans le tiroir |
-| 5 | Attendre 2 minutes | la position du pair apparaît sur la carte |
-| 6 | Poser un plot ENI | il apparaît sur l'autre appareil en quelques secondes |
-| 7 | Tracer un figuré de mission | il apparaît avec sa couleur et son figuré |
-| 8 | Tracer un tracé libre très découpé | il arrive **légèrement lissé** — c'est `encodeOrderFitted` |
-| 9 | Effacer toute la carte | un seul paquet, la carte se vide chez les deux |
-| 10 | Éteindre un module 5 min, composer des ordres, rallumer | **sans rien faire**, le module revenu rattrape son retard en quelques minutes (digest puis réémission) |
-| 10b | Répéter avec un **troisième** module, en éteignant l'auteur des ordres | le retardataire est servi par le tiers : c'est l'enveloppe `RELAY` qui le permet |
-| 11 | Couper le Bluetooth pendant une émission | l'état passe à déconnecté, l'application ne se fige pas |
-| 12 | Ouvrir le panneau de diagnostic à chaque étape | les compteurs bougent, et le diagnostic final dit « Lien nominal » |
-| 13 | Tracer une vingtaine de figurés d'affilée | la ligne « Airtime » monte ; au-delà de 90 %, les envois passent en file au lieu d'être perdus |
-| 14 | Tuer l'application depuis le gestionnaire de tâches, relancer, reconnecter | la carte est retrouvée telle quelle, sans attendre de réémission |
-
-### Vérifications de plateforme
-
-| Appareil | Attendu |
-|---|---|
-| iPhone / iPad | page d'installation avec l'avertissement Apple ; bouton radio **inerte** avec le motif ; carte, GPS et mode serveur pleinement fonctionnels |
-| Chrome de bureau en HTTPS | connexion possible |
-| Application servie en **HTTP** | message « connexion sécurisée » — et non « navigateur non supporté » |
-| Firefox, Safari de bureau | motif nommant le navigateur |
-
 ---
 
-## 4. Ce qui n'est délibérément pas testé
+## 2. Ce que les tests automatiques ne couvrent pas
 
-- **La portée et le duty cycle** : hors de portée d'un test logiciel. Le
-  gouverneur d'airtime est dimensionné sur les chiffres du § 1 ; il faut le
-  confronter au terrain.
-- **La resynchronisation complète** : elle n'existe pas par conception
-  (`docs/mesh/protocol.md` § 6.3). Les tests de partition valident le
-  rattrapage par réémission, pas un transfert d'état intégral.
-- **Le pontage serveur → LoRa** : volontairement absent, un nœud pontant
-  deviendrait le répéteur de toute une salle.
-- **La persistance des ordres en mode mesh seul** : la file hors-ligne et sa
-  persistance sont assurées par la couche serveur. Sans session serveur, les
-  ordres reçus vivent en mémoire et ne survivent pas à une PWA tuée par l'OS.
+Aucun test logiciel n'atteint la couche physique : appairage GATT réel, portée,
+duty cycle, comportement du micrologiciel. Ces points se valident avec du
+matériel, selon [`docs/validation.md`](../validation.md) § 3.
+
+Restent aussi hors du champ automatique :
+
+- **La portée et le duty cycle réels.** Le gouverneur d'airtime est dimensionné
+  sur les estimations de `MESH_PRESETS`, tirées de la documentation et non
+  d'une lecture du module — le point le plus incertain du projet, et il se
+  mesure : [`docs/validation.md`](../validation.md) § 5.
+- **La resynchronisation complète**, qui n'existe pas par conception
+  ([`protocol.md`](protocol.md) § 6.3). Les tests de partition valident le
+  rattrapage incrémental, pas un transfert d'état intégral.
+- **Le pontage serveur → LoRa**, volontairement absent.

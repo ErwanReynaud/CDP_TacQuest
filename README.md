@@ -27,14 +27,15 @@ npm run build      # produit client/dist
 > fonctionne (carte, GPS, mode serveur) mais aucun module ne peut être appairé.
 > `localhost` fait exception. Le `Caddyfile` couvre les deux cas de
 > déploiement, dont celui d'un portable de terrain sans internet — voir
-> [`docs/mesh/tests.md`](docs/mesh/tests.md) § 2.
+> [`docs/validation.md`](docs/validation.md) § 1.
 
 ## Documentation
 
 | Document | Contenu |
 |---|---|
-| [`docs/mesh/protocol.md`](docs/mesh/protocol.md) | protocole binaire, correspondance Meshtastic, sémantique CRDT, périmètre non couvert en LoRa |
-| [`docs/mesh/tests.md`](docs/mesh/tests.md) | ce qui est vérifié automatiquement, et la séquence de validation avec du matériel |
+| [`docs/validation.md`](docs/validation.md) | **campagne d'essais** : procédures en réseau (sans matériel) et hors réseau (mesh LoRa), fiches de relevé |
+| [`docs/mesh/protocol.md`](docs/mesh/protocol.md) | protocole binaire, correspondance Meshtastic, sémantique CRDT, budget d'airtime, périmètre non couvert |
+| [`docs/mesh/tests.md`](docs/mesh/tests.md) | ce que la CI vérifie, et le mesh simulé pour travailler sans matériel |
 
 ## Organisation
 
@@ -79,7 +80,7 @@ incompatible.
 
 ## Reste à faire
 
-- Validation sur matériel : séquence dans [`docs/mesh/tests.md`](docs/mesh/tests.md).
+- Validation sur matériel : campagne dans [`docs/validation.md`](docs/validation.md).
 - Reliquat d'audit, mineur : le code de salle n'est pas validé contre
   `ROOM_CODE_ALPHABET` côté client, `navigator.clipboard` est appelé sans garde
   dans le partage du code, et `#btn-replace` échappe à `setBusy`.
