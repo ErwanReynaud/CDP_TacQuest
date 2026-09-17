@@ -1,7 +1,13 @@
 # TacticalQuest — déploiement Fly.io.
-# `fly launch` peut écraser/compléter ce fichier ; le nom d'app doit être unique
-# sur Fly (modifie `app` si "tacticalquest" est déjà pris).
-app = "tacquest"
+#
+# `app` doit correspondre exactement à l'app créée par `fly apps create`, sinon
+# `fly deploy` vise une app qui ne vous appartient pas et échoue sur
+# « unauthorized » — le message ne dit pas laquelle.
+#
+# Les noms d'app sont globaux sur Fly : préférer `fly apps create <nom>` à
+# `fly launch`, qui réécrit ce fichier et fait perdre la configuration
+# ci-dessous (volume monté, HTTPS forcé, always-on, healthcheck).
+app = "tacmesh"
 primary_region = "cdg"   # Paris
 
 [build]
