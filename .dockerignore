@@ -1,0 +1,25 @@
+# Contexte de build envoyé au constructeur Fly. Sans ce fichier, `COPY . .`
+# écrase le node_modules installé par `npm ci` dans l'image par celui de la
+# machine de développement — or esbuild et rollup embarquent un binaire par
+# plateforme (`@esbuild/darwin-arm64` sur un Mac, `@esbuild/linux-x64` dans
+# l'image). `vite build` échoue alors sur « You installed esbuild for another
+# platform ». Accessoirement, cela évite d'expédier 140 Mo à chaque déploiement.
+node_modules
+**/node_modules
+
+# Reconstruit par `npm run build` dans l'image.
+client/dist
+
+# Inutile au build, et volumineux.
+.git
+.github
+
+# Secrets : les variables de production viennent de fly.toml et de
+# `fly secrets set`, jamais d'un fichier copié dans l'image.
+.env
+.env.*
+
+# Artefacts locaux.
+*.log
+.DS_Store
+coverage
