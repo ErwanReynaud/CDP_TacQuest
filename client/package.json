@@ -23,6 +23,7 @@
   "devDependencies": {
     "@meshtastic/protobufs": "^2.8.0",
     "@types/leaflet": "^1.9.16",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "ste-simple-events": "^3.0.11",
     "tslog": "^5.1.0",
     "typescript": "^5.7.0",

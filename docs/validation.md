@@ -62,15 +62,24 @@ Seule exception : `http://localhost` est considéré comme sécurisé. Un test s
 le portable qui héberge le serveur fonctionne donc sans TLS. Sur un téléphone,
 jamais.
 
-### 1.2 Trois façons d'obtenir du HTTPS
+### 1.2 Quatre façons d'obtenir du HTTPS
 
 | Situation | Moyen | Certificat à installer |
 |---|---|---|
 | Démonstration, essais à plusieurs | `fly deploy` (cf. `fly.toml`) | non |
 | Essai depuis son poste, sans déployer | `tailscale serve` (les hôtes `.ts.net` sont déjà autorisés dans `vite.config.ts`) | non |
+| Développement, téléphone sur le même Wi-Fi | `npm run dev -w client` — le serveur de développement sert en HTTPS sous certificat auto-signé | non, mais un avertissement à accepter une fois par appareil |
 | **Terrain, sans internet** | `caddy run`, second bloc du `Caddyfile` | **oui, sur chaque téléphone** |
 
-Pour le troisième cas :
+Le troisième cas est le plus rapide pour essayer la radio : le serveur écoute
+sur toutes les interfaces, et l'URL `Network:` affichée au démarrage s'ouvre
+telle quelle sur le téléphone. Le navigateur signalera le certificat
+(« Votre connexion n'est pas privée ») : **Paramètres avancés → Continuer**.
+Passé cet écran, le contexte est sécurisé et le Bluetooth Web disponible. Ce
+mode ne convient pas au terrain — il suppose l'ordinateur allumé et sur le même
+réseau — mais il évite un déploiement à chaque essai.
+
+Pour le quatrième cas :
 
 ```sh
 npm ci
