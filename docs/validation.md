@@ -89,7 +89,7 @@ Caddy génère son propre certificat racine :
 
 ### 1.3 À faire à la base, avec du réseau
 
-Ces quatre points **ne peuvent plus être réglés sur le terrain**. Les cocher
+Ces cinq points **ne peuvent plus être réglés sur le terrain**. Les cocher
 avant de partir.
 
 | # | Vérification | Résultat |
@@ -98,9 +98,16 @@ avant de partir.
 | 1.2 | L'application est installée en PWA sur chaque téléphone | |
 | 1.3 | Le code radio est en cache : ouvrir l'app **une fois avec du réseau** (71 ko préchargés en tâche de fond) | |
 | 1.4 | Les modules se voient entre eux **depuis l'application Meshtastic officielle**, avant tout essai TacQuest | |
+| 1.5 | **Fermer l'application Meshtastic officielle** une fois le 1.4 coché — et la fermer vraiment, pas seulement la mettre en arrière-plan | |
 
 Le point 1.4 est le plus important de la campagne : il sépare un problème de
 radio d'un problème d'application. Sans lui, tout échec ultérieur est ambigu.
+
+Le point 1.5 en est l'envers, et il est tout aussi impératif : **un module BLE
+n'accepte qu'une seule liaison à la fois**. Tant que l'application officielle
+la détient, le module cesse d'annoncer son service et **n'apparaît pas du tout**
+dans le sélecteur de TacQuest. Le symptôme n'est pas un message d'erreur mais un
+sélecteur vide, ce qui fait chercher la panne du mauvais côté.
 
 ---
 
@@ -233,6 +240,7 @@ un appareil Android sous Chrome ou un PC sous Chrome/Edge par module.
 | 3.1.3 | Préréglage noté : LongFast, MediumSlow… | à consigner en § 4.1 — toute l'arithmétique d'airtime en dépend | |
 | 3.1.4 | Même canal et **même PSK** sur tous les modules | c'est ce qui matérialise une salle TacQuest | |
 | 3.1.5 | Les modules se voient dans l'application Meshtastic officielle | **à faire avant TacQuest**, sans quoi tout échec est ambigu | |
+| 3.1.6 | **Fermer l'application officielle** avant de passer à TacQuest | elle garde la liaison BLE pour elle ; le module disparaît alors du sélecteur | |
 
 ### 3.2 Appairage BLE
 
@@ -245,6 +253,27 @@ un appareil Android sous Chrome ou un PC sous Chrome/Edge par module.
 | 3.2.5 | Attendre un point GPS | l'ancre de zone s'établit (visible au diagnostic) | |
 | 3.2.6 | Couper le Bluetooth pendant la liaison | l'état passe à déconnecté, **l'application ne se fige pas** | |
 | 3.2.7 | Reconnecter | la liaison repart | |
+
+#### Quand le sélecteur reste vide, ou que rien ne se passe
+
+Le cas le plus courant de la campagne. À parcourir dans l'ordre : les causes
+sont classées de la plus fréquente à la plus rare.
+
+| Symptôme à l'écran | Cause | Remède |
+|---|---|---|
+| Le sélecteur s'ouvre mais reste **vide** | le module est déjà connecté à un autre appareil — l'application officielle, le plus souvent | fermer l'application officielle, et retirer le module des appareils Bluetooth appairés d'Android |
+| Le sélecteur s'ouvre et reste vide, l'application officielle est bien fermée | le module n'annonce pas son service BLE : éteint, hors de portée, ou Bluetooth désactivé dans sa configuration | rallumer le module, se mettre à un mètre, vérifier sa configuration BLE dans l'app officielle (puis la refermer) |
+| « Recherche du module… » puis **« Le Bluetooth est désactivé sur cet appareil »** | radio Bluetooth du téléphone éteinte | l'activer dans les réglages rapides |
+| « Le Bluetooth est éteint ou inaccessible au navigateur » | Chrome n'a pas l'autorisation « Appareils à proximité » | Réglages Android → Applications → Chrome → Autorisations → Appareils à proximité |
+| « Le navigateur a refusé d'ouvrir le sélecteur Bluetooth » | l'appui a expiré pendant le chargement du code radio | recharger la page, puis appuyer sur **Connecter** — et cocher le point 1.3 avant de partir |
+| « Le code radio n'a pas pu être chargé » | l'application a été installée sans que le morceau de code radio soit mis en cache | repasser une fois en ligne, rouvrir l'application, réessayer (c'est le point 1.3) |
+| « Le module est appairé mais ne répond pas » | liaison ouverte mais échange de configuration muet : micrologiciel planté ou non Meshtastic | éteindre et rallumer le module, vérifier le micrologiciel (point 3.1.1) |
+| Le bouton **Connecter** est grisé | la plateforme ne peut pas faire de Bluetooth Web — la ligne d'état en donne le motif | iPhone et iPad sont hors périmètre (§ 6) ; sur PC, utiliser Chrome ou Edge |
+
+Dans tous les cas, le message exact est aussi consigné au **journal de
+diagnostic** (tiroir → Diagnostic → *Copier*), avec le nom technique de
+l'exception entre crochets. C'est lui qu'il faut joindre à un compte rendu de
+panne, pas la description du symptôme.
 
 ### 3.3 Liaison à deux
 

@@ -7,7 +7,12 @@
 // matériel (voir docs/mesh/tests.md).
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BleUnavailableError, connectBleRadio, preloadBleRadio } from './bleRadio';
+import {
+  BleUnavailableError,
+  connectBleRadio,
+  describeBleFailure,
+  preloadBleRadio,
+} from './bleRadio';
 
 const UA = {
   iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1',
@@ -23,6 +28,11 @@ function env(userAgent: string, opts: { bluetooth?: unknown; secure?: boolean } 
     ...(opts.bluetooth !== undefined ? { bluetooth: opts.bluetooth } : {}),
   });
   vi.stubGlobal('window', { isSecureContext: opts.secure ?? true });
+}
+
+/** Exception du Bluetooth Web, telle que Chrome la rejette. */
+function domError(name: string, message: string): Error {
+  return Object.assign(new Error(message), { name });
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -79,7 +89,7 @@ describe('connectBleRadio — sélecteur Bluetooth', () => {
     // requestDevice rejette avec NotFoundError quand l'utilisateur annule ou
     // qu'aucun appareil ne correspond : les deux cas méritent une consigne,
     // pas une trace technique.
-    const notFound = Object.assign(new Error('User cancelled'), { name: 'NotFoundError' });
+    const notFound = domError('NotFoundError', 'User cancelled the requestDevice() chooser.');
     env(UA.androidChrome, {
       bluetooth: { requestDevice: () => Promise.reject(notFound) },
     });
@@ -87,5 +97,104 @@ describe('connectBleRadio — sélecteur Bluetooth', () => {
     expect(err).toBeInstanceOf(BleUnavailableError);
     expect(err.reason).toBe('cancelled');
     expect(err.message).toMatch(/allumé|portée/);
+  });
+});
+
+describe('connectBleRadio — Bluetooth éteint', () => {
+  it('refuse avant d’ouvrir le sélecteur quand l’adaptateur est indisponible', async () => {
+    // Symptôme observé sur le terrain : le bouton affiche « Recherche du
+    // module… » une demi-seconde puis plus rien, parce que requestDevice
+    // rejette sans jamais ouvrir de sélecteur. getAvailability le dit avant.
+    const requestDevice = vi.fn();
+    env(UA.androidChrome, {
+      bluetooth: { requestDevice, getAvailability: () => Promise.resolve(false) },
+    });
+    const err = (await connectBleRadio().catch((e: unknown) => e)) as BleUnavailableError;
+    expect(err).toBeInstanceOf(BleUnavailableError);
+    expect(err.reason).toBe('adapter-off');
+    expect(err.message).toMatch(/activez-le/i);
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
+
+  it('n’interrompt pas la connexion si getAvailability échoue', async () => {
+    // Derrière une permissions-policy, l'appel rejette alors que le Bluetooth
+    // est parfaitement utilisable : on laisse requestDevice trancher.
+    env(UA.androidChrome, {
+      bluetooth: {
+        requestDevice: () => Promise.reject(domError('NotFoundError', 'User cancelled')),
+        getAvailability: () => Promise.reject(new Error('disallowed')),
+      },
+    });
+    const err = (await connectBleRadio().catch((e: unknown) => e)) as BleUnavailableError;
+    expect(err.reason).toBe('cancelled');
+  });
+});
+
+describe('describeBleFailure', () => {
+  it('distingue un adaptateur absent d’un sélecteur fermé', () => {
+    // Chrome donne le même `name` aux deux : seul le texte les sépare, et les
+    // consignes sont opposées (allumer le Bluetooth vs. allumer le module).
+    const off = describeBleFailure(domError('NotFoundError', 'Bluetooth adapter not available.'));
+    expect(off.reason).toBe('adapter-off');
+    const cancelled = describeBleFailure(
+      domError('NotFoundError', 'User cancelled the requestDevice() chooser.'),
+    );
+    expect(cancelled.reason).toBe('cancelled');
+  });
+
+  it('nomme l’app officielle, qui accapare la liaison', () => {
+    // Cause n°1 d'un sélecteur vide : le module est déjà connecté ailleurs.
+    const err = describeBleFailure(domError('NotFoundError', 'User cancelled'));
+    expect(err.message).toMatch(/Meshtastic officielle/);
+  });
+
+  it('traduit une activation utilisateur expirée', () => {
+    const err = describeBleFailure(
+      domError('SecurityError', 'Must be handling a user gesture to show a permission request.'),
+    );
+    expect(err.reason).toBe('no-gesture');
+  });
+
+  it('traduit un refus d’autorisation et une liaison perdue', () => {
+    expect(describeBleFailure(domError('NotAllowedError', 'denied')).reason).toBe('denied');
+    expect(describeBleFailure(domError('NetworkError', 'GATT lost')).reason).toBe('link-lost');
+  });
+
+  it('conserve le détail technique pour le journal de diagnostic', () => {
+    // La consigne sert à l'utilisateur ; le détail sert à qui dépanne.
+    const err = describeBleFailure(domError('NetworkError', 'Connection failed abruptly'));
+    expect(err.message).toContain('NetworkError');
+    expect(err.message).toContain('Connection failed abruptly');
+  });
+
+  it('laisse passer une erreur déjà traduite sans la ré-emballer', () => {
+    const original = new BleUnavailableError('déjà dit', 'ios');
+    expect(describeBleFailure(original)).toBe(original);
+  });
+
+  it('reste compréhensible sur une exception inconnue', () => {
+    const err = describeBleFailure(domError('WeirdError', 'boom'));
+    expect(err.reason).toBe('connect-failed');
+    expect(err.message).toMatch(/Connexion Bluetooth impossible/);
+  });
+});
+
+describe('connectBleRadio — code radio absent du cache', () => {
+  it('distingue un chargement de module raté d’une panne radio', async () => {
+    // Hors ligne avec un cache incomplet, l'import dynamique échoue. Sans ce
+    // message, l'utilisateur chercherait la panne du côté du module.
+    vi.doMock('./bleRadioImpl', () => {
+      throw new TypeError('Failed to fetch dynamically imported module');
+    });
+    env(UA.androidChrome, { bluetooth: { requestDevice: () => Promise.reject(new Error('x')) } });
+    // Le module de tête a déjà été évalué : on le réévalue pour que son import
+    // dynamique voie la simulation d'échec.
+    vi.resetModules();
+    const fresh = await import('./bleRadio');
+    const err = (await fresh.connectBleRadio().catch((e: unknown) => e)) as BleUnavailableError;
+    expect(err.reason).toBe('chunk-failed');
+    expect(err.message).toMatch(/Internet/);
+    vi.doUnmock('./bleRadioImpl');
+    vi.resetModules();
   });
 });

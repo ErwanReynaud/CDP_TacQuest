@@ -9,13 +9,12 @@
 // est pris en charge par @meshtastic/transport-web-bluetooth ; ce module câble
 // ce transport sur MeshDevice et traduit les événements Meshtastic vers
 // l'interface Radio, sans jamais laisser fuir de type Meshtastic au-dessus.
-
 import { create } from '@bufbuild/protobuf';
 import { MeshDevice, Protobuf, Types } from '@meshtastic/core';
 import { TransportWebBluetooth } from '@meshtastic/transport-web-bluetooth';
 import type { Position } from '@tq/shared/protocol';
 import { encodePosition, fromMeshPosition } from './positionCodec';
-import { BleUnavailableError, type BleRadioOptions } from './bleRadio';
+import { BleUnavailableError, describeBleFailure, type BleRadioOptions } from './bleRadio';
 import { type Radio, RadioEmitter, type RadioEvents, type RadioStatus, type RadioUser } from './radio';
 
 const STATUS: Record<number, RadioStatus> = {
@@ -138,6 +137,40 @@ class BleRadio implements Radio {
 }
 
 /**
+ * Délai au-delà duquel on considère que le module ne répondra pas.
+ *
+ * L'échange de configuration Meshtastic (my_node_info, canaux, nœuds connus)
+ * prend quelques secondes ; au-delà, le module est appairé mais muet — firmware
+ * planté, mauvais service GATT, lien saturé. Sans plafond, `configure()` ne
+ * rejette jamais et l'écran reste indéfiniment sur « Recherche du module… ».
+ */
+const CONFIGURE_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(task: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new BleUnavailableError(
+          'Le module est appairé mais ne répond pas. Éteignez-le et rallumez-le, ' +
+            'vérifiez qu’il exécute bien un firmware Meshtastic, puis réessayez.',
+          'configure-timeout',
+        ),
+      );
+    }, ms);
+    task.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e as Error);
+      },
+    );
+  });
+}
+
+/**
  * Ouvre le sélecteur Bluetooth du navigateur, se connecte au module choisi et
  * attend la fin de sa configuration. La compatibilité de la plateforme a déjà
  * été vérifiée par l'appelant (bleRadio.ts).
@@ -147,21 +180,22 @@ export async function createBleRadio(opts: BleRadioOptions = {}): Promise<Radio>
   try {
     transport = await TransportWebBluetooth.create();
   } catch (err) {
-    // L'utilisateur a fermé le sélecteur, ou aucun module n'était appairable.
-    const name = (err as { name?: string }).name;
-    if (name === 'NotFoundError') {
-      throw new BleUnavailableError(
-        'Aucun module sélectionné. Vérifiez que le module est allumé, à portée, ' +
-          'et qu’il n’est pas déjà connecté à un autre appareil.',
-        'cancelled',
-      );
-    }
-    throw new BleUnavailableError(`Connexion Bluetooth impossible : ${String(err)}`, 'connect-failed');
+    // Sélecteur fermé, Bluetooth éteint, permission Android manquante, module
+    // déjà pris par un autre appareil : autant de causes distinctes que
+    // `describeBleFailure` nomme, au lieu d'une trace technique.
+    throw describeBleFailure(err);
   }
 
   const device = new MeshDevice(transport);
   const radio = new BleRadio(device, opts.channel ?? Types.ChannelNumber.Primary);
-  await device.configure();
+  try {
+    await withTimeout(device.configure(), CONFIGURE_TIMEOUT_MS);
+  } catch (err) {
+    // Le lien GATT est ouvert mais l'échange de configuration a échoué : on
+    // referme, sans quoi le module resterait accaparé par un onglet qui ne
+    // s'en sert pas — et resterait invisible à la tentative suivante.
+    await device.disconnect().catch(() => {});
+    throw describeBleFailure(err);
+  }
   return radio;
 }
-

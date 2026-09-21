@@ -1214,6 +1214,17 @@ function setMeshStatus(text: string, tone: 'ok' | 'ko' | 'neutral'): void {
   el.hidden = !text;
 }
 
+/**
+ * Dernier échec de connexion radio, conservé jusqu'à la tentative suivante.
+ *
+ * `renderMesh()` est rappelé après chaque tentative et à chaque changement
+ * d'état du module ; sans cette mémoire, il réécrirait une ligne d'état vide
+ * par-dessus le message d'erreur qui vient d'être posé, et l'échec passerait
+ * pour un bouton qui ne fait rien — exactement la panne muette que la liaison
+ * radio doit éviter.
+ */
+let meshError: string | null = null;
+
 /** Reflète l'état de la liaison sur le bouton et la ligne d'état du tiroir. */
 function renderMesh(): void {
   const btn = $<HTMLButtonElement>('btn-mesh');
@@ -1231,6 +1242,8 @@ function renderMesh(): void {
   if (!support.supported) {
     btn.disabled = true;
     setMeshStatus(support.message, 'ko');
+  } else if (meshError) {
+    setMeshStatus(meshError, 'ko');
   } else {
     setMeshStatus('', 'neutral');
   }
@@ -1239,12 +1252,14 @@ function renderMesh(): void {
 async function toggleMesh(): Promise<void> {
   if (meshTransport()) {
     detachMesh();
+    meshError = null;
     renderMesh();
     toast('Module radio déconnecté.');
     return;
   }
   const btn = $<HTMLButtonElement>('btn-mesh');
   btn.disabled = true;
+  meshError = null;
   setMeshStatus('Recherche du module…', 'neutral');
   try {
     const radio = await connectBleRadio();
@@ -1257,10 +1272,12 @@ async function toggleMesh(): Promise<void> {
     radio.on('status', () => renderMesh());
     toast('Module radio connecté.');
   } catch (err) {
-    const message =
+    meshError =
       err instanceof BleUnavailableError ? err.message : `Connexion impossible : ${String(err)}`;
-    setMeshStatus(message, 'ko');
-    dlog('mesh', message);
+    // Le message reste aussi au journal : la ligne d'état du tiroir est courte,
+    // et c'est le journal que l'utilisateur recopie quand il demande de l'aide.
+    dlog('mesh', meshError);
+    toast('Connexion radio impossible — voir le détail dans le tiroir.');
   } finally {
     btn.disabled = false;
     renderMesh();

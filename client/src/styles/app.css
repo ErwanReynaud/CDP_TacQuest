@@ -326,6 +326,9 @@ input[type='text']:focus { outline: 2px solid var(--accent); border-color: trans
   font-size: 13px;
   line-height: 1.4;
   margin: 0 0 8px;
+  /* Le détail technique en queue de message (nom et texte de l'exception)
+     n'a pas de point de césure : sans cela il déborderait du tiroir. */
+  overflow-wrap: anywhere;
 }
 .mesh-status[hidden] { display: none; }
 
