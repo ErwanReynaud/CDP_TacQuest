@@ -14,6 +14,12 @@ client/dist
 .git
 .github
 
+# Documentation et matériel de référence : consultés au dépôt, jamais servis
+# par l'application. À eux seuls, 14 Mo de PDF et de planches.
+biblio
+resources
+docs
+
 # Secrets : les variables de production viennent de fly.toml et de
 # `fly secrets set`, jamais d'un fichier copié dans l'image.
 .env
