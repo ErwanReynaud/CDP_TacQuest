@@ -1,4 +1,6 @@
 import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 // @meshtastic/core embarque tslog, dont le chemin Node importe statiquement
 // os/path/util. Sans ces alias, `vite build` échoue sur
@@ -6,6 +8,10 @@ import { defineConfig } from 'vitest/config';
 const nodeBuiltinShim = new URL('./src/shims/node-builtins.ts', import.meta.url).pathname;
 
 export default defineConfig({
+  plugins: [
+    basicSsl(),
+    // ... vos autres plugins existants
+  ],
   resolve: {
     alias: { os: nodeBuiltinShim, path: nodeBuiltinShim, util: nodeBuiltinShim },
   },
@@ -13,6 +19,8 @@ export default defineConfig({
   // seulement si le terrain révèle des navigateurs pré-2017.
   build: { target: 'es2017' },
   server: {
+    host: true, // équivaut à --host, écoute sur toutes les interfaces réseau
+    port: 5173,
     // Autorise l'accès via Tailscale (tailscale serve → vite dev).
     allowedHosts: ['.ts.net'],
     proxy: {
